@@ -1,0 +1,612 @@
+/*
+ * Author: L. Saetta
+ * Version: 0.1.0
+ * Last modified: 2026-04-30
+ * License: MIT
+ */
+
+:root {
+  color-scheme: light;
+  --page: #f6efe7;
+  --page-2: #e8f3ef;
+  --sidebar: #173b3b;
+  --sidebar-2: #24524e;
+  --sidebar-line: rgba(255, 255, 255, 0.16);
+  --surface: #fffdf9;
+  --surface-2: #f8fbf8;
+  --surface-3: #f1f6f2;
+  --line: #d9d2c7;
+  --line-strong: #c1b7a9;
+  --text: #21251f;
+  --muted: #697166;
+  --accent: #0d7c72;
+  --accent-strong: #075e58;
+  --accent-soft: #dff3ed;
+  --coral: #d96f4a;
+  --coral-soft: #ffe1d4;
+  --gold: #bd8b2e;
+  --code-bg: #fcfaf5;
+  --code-line: #efe7d9;
+  --code-text: #20312d;
+  --shadow: 0 22px 55px rgba(41, 52, 43, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top left, rgba(217, 111, 74, 0.22), transparent 34%),
+    radial-gradient(circle at top right, rgba(13, 124, 114, 0.2), transparent 30%),
+    linear-gradient(135deg, var(--page) 0%, var(--page-2) 100%);
+  color: var(--text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  height: 100vh;
+  overflow: auto;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 28%),
+    linear-gradient(160deg, var(--sidebar) 0%, var(--sidebar-2) 100%);
+  color: #f7fbf8;
+}
+
+.brand {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--coral), #f2aa59);
+  color: #ffffff;
+  box-shadow: 0 14px 28px rgba(8, 35, 33, 0.28);
+}
+
+.brand h1,
+.brand p,
+.panel h2,
+.topbar h2,
+.stageHeader h3,
+.stageHeader p,
+.editorHeader h3,
+.editorHeader p,
+.runPanel h3,
+.runPanel p {
+  margin: 0;
+}
+
+.brand h1 {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.brand p {
+  margin-top: 4px;
+  color: rgba(247, 251, 248, 0.72);
+  font-size: 13px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--sidebar-line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.panel.compact {
+  gap: 14px;
+}
+
+.panelTitle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.panel h2 {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.panelTitle svg,
+.fileDrop svg {
+  color: #ffd0bd;
+}
+
+.fileDrop {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 72px;
+  padding: 13px;
+  border: 1px dashed rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.fileDrop:hover {
+  border-color: #ffd0bd;
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.fileDrop span {
+  min-width: 0;
+}
+
+.fileDrop strong,
+.fileDrop small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileDrop strong {
+  font-size: 13px;
+}
+
+.fileDrop small,
+.field span {
+  color: rgba(247, 251, 248, 0.68);
+}
+
+.fileDrop small {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.fileDrop input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field span {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.field input,
+.selectWrap select {
+  width: 100%;
+  height: 39px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  padding: 0 11px;
+  outline: none;
+}
+
+.field input:focus,
+.selectWrap select:focus,
+.editorPane textarea:focus {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px rgba(217, 111, 74, 0.16);
+}
+
+.selectWrap {
+  position: relative;
+}
+
+.selectWrap select {
+  appearance: none;
+  padding-right: 34px;
+}
+
+.selectWrap svg {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  pointer-events: none;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+
+.checks {
+  display: grid;
+  gap: 9px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(247, 251, 248, 0.86);
+  font-size: 13px;
+}
+
+.readyIcon {
+  color: #86efac;
+}
+
+.mutedIcon {
+  color: rgba(247, 251, 248, 0.34);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 28px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 68px;
+}
+
+.eyebrow {
+  margin: 0 0 5px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.topbar h2 {
+  color: #1f2925;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-weight: 800;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.primaryButton {
+  border: 1px solid var(--accent-strong);
+  background: linear-gradient(135deg, var(--accent), #10998c);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(13, 124, 114, 0.26);
+}
+
+.primaryButton:hover:not(:disabled),
+.secondaryButton:hover {
+  transform: translateY(-1px);
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+}
+
+.secondaryButton {
+  border: 1px solid rgba(33, 37, 31, 0.1);
+  background: rgba(255, 253, 249, 0.78);
+  color: var(--text);
+  box-shadow: 0 10px 20px rgba(48, 56, 45, 0.08);
+}
+
+.secondaryButton:hover {
+  border-color: rgba(13, 124, 114, 0.26);
+  background: #ffffff;
+}
+
+.mainStage {
+  overflow: hidden;
+  border: 1px solid rgba(33, 37, 31, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 253, 249, 0.78);
+  box-shadow: var(--shadow);
+}
+
+.stageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 76px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(90deg, rgba(13, 124, 114, 0.12), transparent 42%),
+    #fffdf9;
+}
+
+.stageHeader h3 {
+  font-size: 17px;
+}
+
+.stageHeader p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stagePills {
+  display: flex;
+  gap: 8px;
+}
+
+.stagePills span {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.stagePills span:last-child {
+  background: var(--coral-soft);
+  color: #9d472a;
+}
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+  min-height: 0;
+}
+
+.editorPane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 560px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.yamlPane {
+  border-right: 1px solid var(--line);
+}
+
+.editorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 66px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.envPane .editorHeader {
+  background: #fff7f1;
+}
+
+.editorHeader h3 {
+  font-size: 15px;
+}
+
+.editorHeader p,
+.editorHeader span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorHeader > div {
+  min-width: 0;
+}
+
+.editorHeader span {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 4px 8px;
+}
+
+.editorPane textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 494px;
+  resize: none;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, var(--code-line) 0 48px, transparent 48px),
+    var(--code-bg);
+  color: var(--code-text);
+  padding: 18px 18px 18px 66px;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, ui-monospace,
+    monospace;
+  font-size: 13px;
+  line-height: 1.58;
+  outline: none;
+  tab-size: 2;
+}
+
+.envPane textarea {
+  background:
+    linear-gradient(90deg, #f8dfcf 0 48px, transparent 48px),
+    #fffaf6;
+}
+
+.runPanel {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(320px, 1.22fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 16px;
+  border: 1px solid rgba(33, 37, 31, 0.08);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 225, 212, 0.78), transparent 42%),
+    rgba(255, 253, 249, 0.86);
+  box-shadow: 0 16px 32px rgba(48, 56, 45, 0.1);
+}
+
+.runPanel h3 {
+  font-size: 15px;
+}
+
+.runPanel p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.runLog {
+  min-height: 58px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf9;
+  padding: 12px;
+  color: #5c665c;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1120px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .editorGrid,
+  .runPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .yamlPane {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 720px) {
+  .sidebar,
+  .content {
+    padding: 16px;
+  }
+
+  .topbar,
+  .stageHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .topbar h2 {
+    font-size: 25px;
+  }
+
+  .actions {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .primaryButton,
+  .secondaryButton {
+    flex: 1 1 140px;
+  }
+
+  .editorPane {
+    min-height: 430px;
+  }
+
+  .editorPane textarea {
+    min-height: 360px;
+    padding-left: 54px;
+    background:
+      linear-gradient(90deg, var(--code-line) 0 38px, transparent 38px),
+      var(--code-bg);
+  }
+
+  .envPane textarea {
+    background:
+      linear-gradient(90deg, #f8dfcf 0 38px, transparent 38px),
+      #fffaf6;
+  }
+}

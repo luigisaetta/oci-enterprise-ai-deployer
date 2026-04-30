@@ -1,0 +1,342 @@
+"use client";
+
+/*
+ * Author: L. Saetta
+ * Version: 0.1.0
+ * Last modified: 2026-04-30
+ * License: MIT
+ */
+
+import {
+  CheckCircle2,
+  ChevronDown,
+  FileCode2,
+  FileText,
+  Play,
+  RotateCcw,
+  Save,
+  Settings2,
+  UploadCloud,
+} from "lucide-react";
+import { ChangeEvent, useMemo, useState } from "react";
+
+type FileKind = "yaml" | "env";
+
+type UploadedFile = {
+  name: string;
+  size: number;
+  content: string;
+};
+
+type ActionKey = "validate" | "render" | "dry-run" | "deploy";
+
+const ACTIONS: Record<ActionKey, string> = {
+  validate: "Validate configuration",
+  render: "Render JSON artifacts",
+  "dry-run": "Review dry run",
+  deploy: "Deploy",
+};
+
+const SAMPLE_YAML = `application:
+  name: my-agent-app-dev
+  compartment_id: ocid1.compartment.oc1..example
+  region: eu-frankfurt-1
+  region_key: fra
+
+container:
+  context: ../../examples/hello_world_container
+  dockerfile: Dockerfile
+  repository: enterprise-ai
+  image_name: sample-agent
+  tag: dev
+
+hosted_application:
+  display_name: Sample Agent App
+
+hosted_deployment:
+  display_name: Sample Agent Deployment
+`;
+
+const SAMPLE_ENV = `MY_AGENT_API_KEY=replace-with-local-development-secret
+LOG_LEVEL=INFO
+`;
+
+function formatBytes(size: number) {
+  if (!size) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB"];
+  const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), 2);
+  return `${(size / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function fileSummary(file: UploadedFile | null, fallback: string) {
+  if (!file) {
+    return fallback;
+  }
+  return `${file.name} · ${formatBytes(file.size)}`;
+}
+
+export default function DeployerConsole() {
+  const [yamlFile, setYamlFile] = useState<UploadedFile | null>(null);
+  const [envFile, setEnvFile] = useState<UploadedFile | null>(null);
+  const [yamlContent, setYamlContent] = useState(SAMPLE_YAML);
+  const [envContent, setEnvContent] = useState(SAMPLE_ENV);
+  const [selectedAction, setSelectedAction] = useState<ActionKey>("validate");
+  const [profile, setProfile] = useState("DEFAULT");
+  const [region, setRegion] = useState("eu-frankfurt-1");
+  const [outputDir, setOutputDir] = useState("enterprise_ai_deployment/generated");
+  const [lastRun, setLastRun] = useState<string | null>(null);
+
+  const readiness = useMemo(() => {
+    const checks = [
+      { label: "YAML file", ready: yamlContent.trim().length > 0 },
+      { label: "Environment file", ready: envContent.trim().length > 0 },
+      { label: "OCI profile", ready: profile.trim().length > 0 },
+      { label: "Region", ready: region.trim().length > 0 },
+    ];
+    return checks;
+  }, [envContent, profile, region, yamlContent]);
+
+  const canRun = readiness.every((item) => item.ready);
+
+  function handleUpload(kind: FileKind, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result ?? "");
+      const uploaded = {
+        name: file.name,
+        size: file.size,
+        content,
+      };
+
+      if (kind === "yaml") {
+        setYamlFile(uploaded);
+        setYamlContent(content);
+      } else {
+        setEnvFile(uploaded);
+        setEnvContent(content);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
+  function resetSamples() {
+    setYamlFile(null);
+    setEnvFile(null);
+    setYamlContent(SAMPLE_YAML);
+    setEnvContent(SAMPLE_ENV);
+    setLastRun(null);
+  }
+
+  function runFakeAction() {
+    if (!canRun) {
+      return;
+    }
+
+    const timestamp = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    setLastRun(
+      `${timestamp} · ${ACTIONS[selectedAction]} queued as a UI-only preview. No files were written and no OCI command was executed.`,
+    );
+  }
+
+  return (
+    <main className="workspace">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brandMark">
+            <UploadCloud size={22} aria-hidden="true" />
+          </div>
+          <div>
+            <h1>OCI Enterprise AI Deployer</h1>
+            <p>Hosted apps console</p>
+          </div>
+        </div>
+
+        <section className="panel">
+          <div className="panelTitle">
+            <UploadCloud size={18} aria-hidden="true" />
+            <h2>Upload Files</h2>
+          </div>
+          <label className="fileDrop">
+            <FileCode2 size={18} aria-hidden="true" />
+            <span>
+              <strong>YAML configuration</strong>
+              <small>{fileSummary(yamlFile, "Upload .yaml or .yml")}</small>
+            </span>
+            <input
+              accept=".yaml,.yml,text/yaml,text/plain"
+              type="file"
+              onChange={(event) => handleUpload("yaml", event)}
+            />
+          </label>
+          <label className="fileDrop">
+            <FileText size={18} aria-hidden="true" />
+            <span>
+              <strong>Environment file</strong>
+              <small>{fileSummary(envFile, "Upload .env")}</small>
+            </span>
+            <input
+              accept=".env,text/plain"
+              type="file"
+              onChange={(event) => handleUpload("env", event)}
+            />
+          </label>
+        </section>
+
+        <section className="panel">
+          <div className="panelTitle">
+            <Settings2 size={18} aria-hidden="true" />
+            <h2>Run Settings</h2>
+          </div>
+          <label className="field">
+            <span>OCI profile</span>
+            <input value={profile} onChange={(event) => setProfile(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Region</span>
+            <input value={region} onChange={(event) => setRegion(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Output directory</span>
+            <input
+              value={outputDir}
+              onChange={(event) => setOutputDir(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>Action</span>
+            <div className="selectWrap">
+              <select
+                value={selectedAction}
+                onChange={(event) => setSelectedAction(event.target.value as ActionKey)}
+              >
+                {Object.entries(ACTIONS).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} aria-hidden="true" />
+            </div>
+          </label>
+        </section>
+
+        <section className="panel compact">
+          <h2>Readiness</h2>
+          <div className="checks">
+            {readiness.map((item) => (
+              <div className="check" key={item.label}>
+                <CheckCircle2
+                  className={item.ready ? "readyIcon" : "mutedIcon"}
+                  size={16}
+                  aria-hidden="true"
+                />
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </aside>
+
+      <section className="content">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Deployment workspace</p>
+            <h2>Configuration files</h2>
+          </div>
+          <div className="actions">
+            <button className="secondaryButton" type="button" onClick={resetSamples}>
+              <RotateCcw size={17} aria-hidden="true" />
+              Reset
+            </button>
+            <button className="secondaryButton" type="button">
+              <Save size={17} aria-hidden="true" />
+              Save Draft
+            </button>
+            <button
+              className="primaryButton"
+              type="button"
+              onClick={runFakeAction}
+              disabled={!canRun}
+            >
+              <Play size={17} aria-hidden="true" />
+              Run Preview
+            </button>
+          </div>
+        </header>
+
+        <section className="mainStage">
+          <div className="stageHeader">
+            <div>
+              <h3>File contents</h3>
+              <p>Editable YAML and environment inputs</p>
+            </div>
+            <div className="stagePills">
+              <span>YAML</span>
+              <span>ENV</span>
+            </div>
+          </div>
+
+          <div className="editorGrid">
+            <article className="editorPane yamlPane">
+              <div className="editorHeader">
+                <div>
+                  <h3>YAML Configuration</h3>
+                  <p>{fileSummary(yamlFile, "Sample content loaded")}</p>
+                </div>
+                <span>{yamlContent.split("\n").length} lines</span>
+              </div>
+              <textarea
+                spellCheck={false}
+                value={yamlContent}
+                onChange={(event) => setYamlContent(event.target.value)}
+                aria-label="Editable YAML configuration"
+              />
+            </article>
+
+            <article className="editorPane envPane">
+              <div className="editorHeader">
+                <div>
+                  <h3>Environment File</h3>
+                  <p>{fileSummary(envFile, "Sample content loaded")}</p>
+                </div>
+                <span>{envContent.split("\n").length} lines</span>
+              </div>
+              <textarea
+                spellCheck={false}
+                value={envContent}
+                onChange={(event) => setEnvContent(event.target.value)}
+                aria-label="Editable environment file"
+              />
+            </article>
+          </div>
+        </section>
+
+        <section className="runPanel">
+          <div>
+            <h3>{ACTIONS[selectedAction]}</h3>
+            <p>
+              Profile <strong>{profile || "Not set"}</strong> · Region{" "}
+              <strong>{region || "Not set"}</strong> · Output{" "}
+              <strong>{outputDir || "Not set"}</strong>
+            </p>
+          </div>
+          <div className="runLog">
+            {lastRun ?? "No action has been launched in this UI session."}
+          </div>
+        </section>
+      </section>
+    </main>
+  );
+}

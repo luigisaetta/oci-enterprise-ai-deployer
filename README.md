@@ -43,6 +43,7 @@ published image.
 │   ├── cli_commands.py            # OCI CLI command builders
 │   ├── workflows.py               # interactive menu workflows
 │   └── examples/agent_dev.yaml    # editable deployment template
+├── apps/deployer-web              # Next.js UI preview
 ├── examples/hello_world_container # minimal container target for local tests
 ├── tests/                         # pytest suite
 ├── oci_ai_deploy.py               # repository-root CLI wrapper
@@ -138,6 +139,26 @@ After editable install, the console scripts are also available:
 ```bash
 oci-ai-deploy --help
 oci-ai-deploy-menu
+```
+
+## Web UI Preview
+
+The repository includes a Next.js interface prototype in `apps/deployer-web`.
+It currently implements a UI-only workflow for uploading, viewing, editing, and
+previewing YAML and `.env` deployment files. Actions are intentionally fake for
+now and do not call Docker, OCI, or the Python CLI.
+
+From the web app directory:
+
+```bash
+npm install
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:3000
 ```
 
 ## Configure A Deployment
