@@ -149,8 +149,9 @@ oci-ai-deploy-menu
 
 The repository includes a Next.js interface prototype in `apps/deployer-web`.
 It currently implements a UI-only workflow for uploading, viewing, editing, and
-previewing YAML and `.env` deployment files. Actions stream fake backend events
-for now and do not call Docker, OCI, or the Python CLI.
+previewing YAML and `.env` deployment files. The backend performs real YAML and
+configuration validation, then streams fake downstream action events for now.
+It does not call Docker, OCI, or the deployment CLI yet.
 
 Start the FastAPI backend from the repository root:
 
@@ -190,6 +191,9 @@ The `dev` and `build` scripts clean the local `.next` directory before starting.
 If the CSS ever appears stale during local development, stop the dev server and
 start it again with `npm run dev`. Do not run `npm run build` while a dev server
 for the same app is still running.
+
+Uploaded files do not preserve their original local path in the browser. For web
+validation, relative paths in the YAML are resolved from the repository root.
 
 ## Configure A Deployment
 

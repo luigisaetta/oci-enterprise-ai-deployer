@@ -12,14 +12,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tempfile
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from enterprise_ai_deployment.deployment_config import (
+    DeploymentConfigError,
+    load_deployment_config,
+)
+from enterprise_ai_deployment.deployment_validation import (
+    DeploymentValidationError,
+    validate_deployment_config,
+)
 
 RunAction = Literal["validate", "render", "dry-run", "deploy"]
 
@@ -107,10 +118,10 @@ def create_app() -> FastAPI:
 
 
 async def _fake_run_event_stream(run: StoredRun):
-    """Yield deterministic SSE messages for the UI preview workflow."""
+    """Yield SSE messages for real validation and fake downstream actions."""
     yaml_lines = len(run.yaml.splitlines())
     env_lines = len(run.env.splitlines())
-    steps = [
+    initial_steps = [
         ("status", {"state": "running", "step": "accepted"}),
         (
             "log",
@@ -137,11 +148,37 @@ async def _fake_run_event_stream(run: StoredRun):
             "status",
             {"state": "running", "step": "validate"},
         ),
+    ]
+
+    for event_name, payload in initial_steps:
+        yield _to_sse(event_name, payload)
+        await asyncio.sleep(0.45)
+
+    validation_error = _validate_uploaded_inputs(run)
+    if validation_error:
+        yield _to_sse(
+            "log",
+            {
+                "level": "error",
+                "message": validation_error,
+            },
+        )
+        yield _to_sse(
+            "done",
+            {
+                "state": "failed",
+                "step": "validate",
+                "message": "Validation failed. No Docker or OCI command was executed.",
+            },
+        )
+        return
+
+    follow_up_steps = [
         (
             "log",
             {
                 "level": "success",
-                "message": "Fake validation completed without errors.",
+                "message": "YAML and environment inputs passed real backend validation.",
             },
         ),
         (
@@ -167,10 +204,28 @@ async def _fake_run_event_stream(run: StoredRun):
             },
         ),
     ]
-
-    for event_name, payload in steps:
+    for event_name, payload in follow_up_steps:
         yield _to_sse(event_name, payload)
         await asyncio.sleep(0.45)
+
+
+def _validate_uploaded_inputs(run: StoredRun) -> str | None:
+    """Validate uploaded YAML and env content with the existing Python rules."""
+    repo_root = Path.cwd()
+    try:
+        with tempfile.TemporaryDirectory(prefix="deployer-web-") as temp_dir:
+            temp_path = Path(temp_dir)
+            yaml_path = temp_path / "deployment.yaml"
+            env_path = temp_path / "deployment.env"
+            yaml_path.write_text(run.yaml, encoding="utf-8")
+            env_path.write_text(run.env, encoding="utf-8")
+
+            config = load_deployment_config(yaml_path, env_file=env_path)
+            config = replace(config, source_path=repo_root / "deployment.yaml")
+            validate_deployment_config(config)
+    except (DeploymentConfigError, DeploymentValidationError) as exc:
+        return str(exc)
+    return None
 
 
 def _to_sse(event_name: str, payload: dict[str, str]) -> str:
@@ -189,7 +244,7 @@ def main() -> None:
         "enterprise_ai_deployment.api:app",
         host="127.0.0.1",
         port=8000,
-        reload=True,
+        reload=False,
     )
 
 

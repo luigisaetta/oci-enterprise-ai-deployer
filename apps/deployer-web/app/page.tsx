@@ -55,14 +55,18 @@ const SAMPLE_YAML = `application:
   region_key: fra
 
 container:
-  context: ../../examples/hello_world_container
+  context: examples/hello_world_container
   dockerfile: Dockerfile
   repository: enterprise-ai
   image_name: sample-agent
+  tag_strategy: explicit
+  ocir_namespace: auto
   tag: dev
 
 hosted_application:
   display_name: Sample Agent App
+  security:
+    auth_type: NO_AUTH
 
 hosted_deployment:
   display_name: Sample Agent Deployment

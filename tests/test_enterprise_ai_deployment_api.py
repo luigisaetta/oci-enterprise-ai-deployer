@@ -15,15 +15,15 @@ from fastapi.testclient import TestClient
 from enterprise_ai_deployment.api import RUNS, create_app
 
 
-def test_create_preview_run_and_stream_fake_events() -> None:
-    """Preview runs return a run id and stream fake SSE progress events."""
+def test_create_preview_run_and_stream_validation_events() -> None:
+    """Preview runs return a run id and stream real validation progress events."""
     RUNS.clear()
     client = TestClient(create_app())
 
     response = client.post(
         "/api/actions/preview",
         json={
-            "yaml": "application:\n  name: demo\n",
+            "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
             "action": "dry-run",
             "profile": "DEFAULT",
@@ -42,8 +42,36 @@ def test_create_preview_run_and_stream_fake_events() -> None:
     assert "event: status" in body
     assert "event: log" in body
     assert "event: done" in body
-    assert "Fake validation completed without errors." in body
+    assert "passed real backend validation." in body
     assert "No Docker or OCI command was executed." in body
+
+
+def test_preview_run_streams_validation_failure() -> None:
+    """Invalid YAML/configuration streams a failed validation result."""
+    RUNS.clear()
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/actions/preview",
+        json={
+            "yaml": "application:\n  name: demo\n",
+            "env": "",
+            "action": "validate",
+            "profile": "DEFAULT",
+            "region": "eu-frankfurt-1",
+            "output_dir": "generated",
+        },
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+
+    with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+        body = "".join(stream.iter_text())
+
+    assert "event: done" in body
+    assert '"state": "failed"' in body
+    assert "Missing or invalid mapping: container" in body
 
 
 def test_unknown_run_stream_returns_404() -> None:
@@ -53,3 +81,31 @@ def test_unknown_run_stream_returns_404() -> None:
     response = client.get("/api/runs/missing/events")
 
     assert response.status_code == 404
+
+
+def _valid_web_yaml() -> str:
+    """Return a deployment YAML valid when resolved from the repository root."""
+    return """
+application:
+  name: demo-agent
+  compartment_id: ocid1.compartment.oc1..example
+  region: eu-frankfurt-1
+  region_key: fra
+
+container:
+  context: examples/hello_world_container
+  dockerfile: Dockerfile
+  repository: ai-agents
+  image_name: demo-agent
+  tag_strategy: explicit
+  ocir_namespace: auto
+  tag: dev
+
+hosted_application:
+  display_name: Demo Agent
+  security:
+    auth_type: NO_AUTH
+
+hosted_deployment:
+  display_name: Demo Agent Deployment
+"""
