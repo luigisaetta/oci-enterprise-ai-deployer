@@ -13,7 +13,12 @@ from __future__ import annotations
 import json
 import subprocess
 
-from enterprise_ai_deployment.deployment_config import load_deployment_config
+import pytest
+
+from enterprise_ai_deployment.deployment_config import (
+    DeploymentConfigError,
+    load_deployment_config,
+)
 from enterprise_ai_deployment.deployment_renderer import render_artifacts
 from enterprise_ai_deployment.deployment_runner import format_command, main
 from enterprise_ai_deployment.deployment_validation import (
@@ -40,6 +45,45 @@ def test_load_deployment_config_reads_yaml_and_env_file(tmp_path, monkeypatch) -
         "MY_AGENT_API_KEY"
     )
     validate_deployment_config(config)
+
+
+def test_load_deployment_config_rejects_unknown_yaml_fields(tmp_path) -> None:
+    """Schema validation catches typo-like unknown fields before deployment."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(
+        _valid_yaml(tmp_path).replace(
+            "dockerfile: Dockerfile", "dockefile: Dockerfile"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DeploymentConfigError) as exc_info:
+        load_deployment_config(config_path)
+
+    message = str(exc_info.value)
+    assert "Deployment YAML schema validation failed:" in message
+    assert "container.dockerfile" in message
+    assert "container.dockefile" in message
+
+
+def test_load_deployment_config_requires_explicit_tag(tmp_path) -> None:
+    """Schema validation enforces cross-field container rules."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(
+        _valid_yaml(tmp_path).replace('  tag: "20260429"\n', ""),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DeploymentConfigError) as exc_info:
+        load_deployment_config(config_path)
+
+    assert "container.tag is required when tag_strategy is explicit" in str(
+        exc_info.value
+    )
 
 
 def test_render_artifacts_do_not_write_local_secret_values(

@@ -71,7 +71,8 @@ def test_preview_run_streams_validation_failure() -> None:
 
     assert "event: done" in body
     assert '"state": "failed"' in body
-    assert "Missing or invalid mapping: container" in body
+    assert "Deployment YAML schema validation failed:" in body
+    assert "container: Field required" in body
 
 
 def test_unknown_run_stream_returns_404() -> None:

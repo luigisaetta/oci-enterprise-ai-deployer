@@ -150,8 +150,10 @@ oci-ai-deploy-menu
 The repository includes a Next.js interface prototype in `apps/deployer-web`.
 It currently implements a UI-only workflow for uploading, viewing, editing, and
 previewing YAML and `.env` deployment files. The backend performs real YAML and
-configuration validation, then streams fake downstream action events for now.
-It does not call Docker, OCI, or the deployment CLI yet.
+configuration validation with the same Python rules used by the CLI, including
+a strict Pydantic schema that rejects unknown YAML fields. It then streams fake
+downstream action events for now. It does not call Docker, OCI, or the
+deployment CLI yet.
 
 Start the FastAPI backend from the repository root:
 

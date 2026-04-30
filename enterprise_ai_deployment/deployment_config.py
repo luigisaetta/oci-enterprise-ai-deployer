@@ -17,6 +17,12 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from enterprise_ai_deployment.deployment_schema import (
+    DeploymentSchema,
+    DeploymentSchemaError,
+    validate_deployment_schema,
+)
+
 
 class DeploymentConfigError(ValueError):
     """Raised when the deployment configuration cannot be loaded."""
@@ -104,83 +110,54 @@ def load_deployment_config(
             "Deployment YAML must contain a mapping at the top level."
         )
 
-    return _parse_deployment_config(raw_config, config_path)
+    try:
+        schema = validate_deployment_schema(raw_config)
+    except DeploymentSchemaError as exc:
+        raise DeploymentConfigError(str(exc)) from exc
+
+    return _parse_deployment_config(schema, config_path)
 
 
 def _parse_deployment_config(
-    raw_config: dict[str, Any], source_path: Path
+    schema: DeploymentSchema, source_path: Path
 ) -> DeploymentConfig:
     """Convert a raw YAML mapping into typed configuration objects."""
-    application = _required_mapping(raw_config, "application")
-    container = _required_mapping(raw_config, "container")
-    hosted_application = _required_mapping(raw_config, "hosted_application")
-    hosted_deployment = _required_mapping(raw_config, "hosted_deployment")
+    application = schema.application
+    container = schema.container
+    hosted_application = schema.hosted_application
+    hosted_deployment = schema.hosted_deployment
 
     return DeploymentConfig(
         application=ApplicationConfig(
-            name=_required_text(application, "name"),
-            compartment_id=_required_text(application, "compartment_id"),
-            region=_required_text(application, "region"),
-            region_key=_required_text(application, "region_key"),
+            name=application.name,
+            compartment_id=application.compartment_id,
+            region=application.region,
+            region_key=application.region_key,
         ),
         container=ContainerConfig(
-            context=_required_text(container, "context"),
-            dockerfile=_required_text(container, "dockerfile"),
-            image_name=_required_text(container, "image_name"),
-            repository=_required_text(container, "repository"),
-            tag_strategy=_required_text(container, "tag_strategy"),
-            ocir_namespace=_required_text(container, "ocir_namespace"),
-            tag=_optional_text(container, "tag"),
+            context=container.context,
+            dockerfile=container.dockerfile,
+            image_name=container.image_name,
+            repository=container.repository,
+            tag_strategy=container.tag_strategy,
+            ocir_namespace=container.ocir_namespace,
+            tag=container.tag,
         ),
         hosted_application=HostedApplicationConfig(
-            display_name=_required_text(hosted_application, "display_name"),
-            description=_optional_text(hosted_application, "description"),
-            create_if_missing=bool(hosted_application.get("create_if_missing", True)),
-            update_if_exists=bool(hosted_application.get("update_if_exists", False)),
-            scaling=_optional_mapping(hosted_application, "scaling"),
-            networking=_optional_mapping(hosted_application, "networking"),
-            security=_optional_mapping(hosted_application, "security"),
-            environment=_optional_mapping(hosted_application, "environment"),
+            display_name=hosted_application.display_name,
+            description=hosted_application.description,
+            create_if_missing=hosted_application.create_if_missing,
+            update_if_exists=hosted_application.update_if_exists,
+            scaling=hosted_application.scaling,
+            networking=hosted_application.networking,
+            security=hosted_application.security,
+            environment=hosted_application.environment,
         ),
         hosted_deployment=HostedDeploymentConfig(
-            display_name=_required_text(hosted_deployment, "display_name"),
-            create_new_version=bool(hosted_deployment.get("create_new_version", True)),
-            activate=bool(hosted_deployment.get("activate", True)),
-            wait_for_state=_optional_text(hosted_deployment, "wait_for_state"),
+            display_name=hosted_deployment.display_name,
+            create_new_version=hosted_deployment.create_new_version,
+            activate=hosted_deployment.activate,
+            wait_for_state=hosted_deployment.wait_for_state,
         ),
         source_path=source_path,
     )
-
-
-def _required_mapping(parent: dict[str, Any], key: str) -> dict[str, Any]:
-    """Read a required child mapping."""
-    value = parent.get(key)
-    if not isinstance(value, dict):
-        raise DeploymentConfigError(f"Missing or invalid mapping: {key}")
-    return value
-
-
-def _optional_mapping(parent: dict[str, Any], key: str) -> dict[str, Any]:
-    """Read an optional child mapping."""
-    value = parent.get(key, {})
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise DeploymentConfigError(f"Invalid mapping: {key}")
-    return value
-
-
-def _required_text(parent: dict[str, Any], key: str) -> str:
-    """Read a required non-empty string-like value."""
-    value = parent.get(key)
-    if value is None or str(value).strip() == "":
-        raise DeploymentConfigError(f"Missing required field: {key}")
-    return str(value).strip()
-
-
-def _optional_text(parent: dict[str, Any], key: str) -> str | None:
-    """Read an optional non-empty string-like value."""
-    value = parent.get(key)
-    if value is None or str(value).strip() == "":
-        return None
-    return str(value).strip()
