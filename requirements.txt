@@ -1,0 +1,13 @@
+# Author: L. Saetta
+# Version: 0.1.0
+# Last modified: 2026-04-30
+# License: MIT
+
+python-dotenv>=1.0.0
+PyYAML>=6.0
+rich>=13.0.0
+
+black>=24.0.0
+pylint>=3.0.0
+pytest>=8.0.0
+pytest-cov>=5.0.0

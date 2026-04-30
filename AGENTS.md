@@ -26,6 +26,10 @@ same change.
 
 - Keep the tool focused on automated deployment of OCI Enterprise AI Hosted
   Applications and Hosted Deployments.
+- Always use the dedicated Conda environment `oci-enterprise-ai-deployer` for
+  tests and local validation commands. Run test commands through
+  `conda run -n oci-enterprise-ai-deployer ...` unless the environment is
+  already active in the current shell.
 - Preserve the declared version 1 constraints unless the specifications are
   intentionally revised.
 - Prefer small, testable Python modules over large command-oriented scripts.

@@ -51,7 +51,8 @@ published image.
 
 ## Prerequisites
 
-- Python 3.11 or newer.
+- Conda environment named `oci-enterprise-ai-deployer`.
+- Python 3.11 or newer in that environment.
 - Docker Engine.
 - OCI CLI installed and configured.
 - Permission to read/create OCI Generative AI Hosted Applications and Hosted
@@ -76,18 +77,50 @@ Check it with:
 oci os ns get --region eu-frankfurt-1
 ```
 
-## Install
+## Quickstart
 
 From the repository root:
 
 ```bash
-python -m pip install -e ".[dev]"
+conda activate oci-enterprise-ai-deployer
+python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
-You can also run the CLI directly without installing:
+Required Python dependencies are listed in `requirements.txt`:
+
+- `python-dotenv`
+- `PyYAML`
+- `rich`
+- `black`
+- `pylint`
+- `pytest`
+- `pytest-cov`
+
+External tools required for real deployments:
+
+- Docker Engine
+- OCI CLI
+- OCI CLI profile or environment configured for the target tenancy
+- OCIR login for the target region
+
+Run the test suite with the dedicated Conda environment:
+
+```bash
+conda run -n oci-enterprise-ai-deployer python -m pytest
+```
+
+You can run the CLI directly without installing:
 
 ```bash
 python oci_ai_deploy.py --help
+```
+
+After editable install, the console scripts are also available:
+
+```bash
+oci-ai-deploy --help
+oci-ai-deploy-menu
 ```
 
 ## Configure A Deployment
