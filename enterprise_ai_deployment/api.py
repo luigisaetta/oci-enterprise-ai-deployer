@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 import tempfile
 import uuid
 from dataclasses import asdict, dataclass, replace
@@ -173,14 +175,21 @@ async def _fake_run_event_stream(run: StoredRun):
         )
         return
 
+    yield _to_sse(
+        "log",
+        {
+            "level": "success",
+            "message": "YAML and environment inputs passed real backend validation.",
+        },
+    )
+    await asyncio.sleep(0.45)
+
+    if run.action == "dry-run":
+        async for event in _stream_cli_dry_run(run):
+            yield event
+        return
+
     follow_up_steps = [
-        (
-            "log",
-            {
-                "level": "success",
-                "message": "YAML and environment inputs passed real backend validation.",
-            },
-        ),
         (
             "status",
             {"state": "running", "step": "prepare-command"},
@@ -226,6 +235,113 @@ def _validate_uploaded_inputs(run: StoredRun) -> str | None:
     except (DeploymentConfigError, DeploymentValidationError) as exc:
         return str(exc)
     return None
+
+
+async def _stream_cli_dry_run(run: StoredRun):
+    """Run the real CLI dry-run command and stream its output as SSE."""
+    repo_root = Path.cwd()
+    yaml_path: Path | None = None
+    env_path: Path | None = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=repo_root,
+            prefix=".deployer-web-",
+            suffix=".yaml",
+            delete=False,
+        ) as yaml_file:
+            yaml_file.write(run.yaml)
+            yaml_path = Path(yaml_file.name)
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=repo_root,
+            prefix=".deployer-web-",
+            suffix=".env",
+            delete=False,
+        ) as env_file:
+            env_file.write(run.env)
+            env_path = Path(env_file.name)
+
+        command = [
+            sys.executable,
+            "oci_ai_deploy.py",
+            "--config",
+            str(yaml_path),
+            "--env-file",
+            str(env_path),
+            "--output-dir",
+            run.output_dir,
+            "--dry-run",
+            "deploy",
+        ]
+
+        yield _to_sse(
+            "status",
+            {"state": "running", "step": "cli-dry-run"},
+        )
+        yield _to_sse(
+            "log",
+            {
+                "level": "info",
+                "message": "Starting real CLI dry-run. No Docker or OCI command will be executed.",
+            },
+        )
+
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=repo_root,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        if process.stdout is None:
+            raise RuntimeError("Unable to capture CLI dry-run output.")
+
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            message = line.decode("utf-8", errors="replace").rstrip()
+            if message:
+                yield _to_sse("log", {"level": "info", "message": message})
+
+        return_code = await process.wait()
+        if return_code == 0:
+            yield _to_sse(
+                "done",
+                {
+                    "state": "succeeded",
+                    "step": "complete",
+                    "message": "CLI dry-run completed successfully.",
+                },
+            )
+        else:
+            yield _to_sse(
+                "done",
+                {
+                    "state": "failed",
+                    "step": "cli-dry-run",
+                    "message": f"CLI dry-run failed with exit code {return_code}.",
+                },
+            )
+    except OSError as exc:
+        yield _to_sse(
+            "done",
+            {
+                "state": "failed",
+                "step": "cli-dry-run",
+                "message": f"Unable to start CLI dry-run: {exc}",
+            },
+        )
+    finally:
+        for path in (yaml_path, env_path):
+            if path is not None:
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
 
 
 def _to_sse(event_name: str, payload: dict[str, str]) -> str:

@@ -43,7 +43,10 @@ def test_create_preview_run_and_stream_validation_events() -> None:
     assert "event: log" in body
     assert "event: done" in body
     assert "passed real backend validation." in body
-    assert "No Docker or OCI command was executed." in body
+    assert "Deployment plan:" in body
+    assert "docker build --platform linux/amd64" in body
+    assert "Dry run: no OCI commands were executed." in body
+    assert "CLI dry-run completed successfully." in body
 
 
 def test_preview_run_streams_validation_failure() -> None:

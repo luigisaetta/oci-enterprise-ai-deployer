@@ -151,9 +151,10 @@ The repository includes a Next.js interface prototype in `apps/deployer-web`.
 It currently implements a UI-only workflow for uploading, viewing, editing, and
 previewing YAML and `.env` deployment files. The backend performs real YAML and
 configuration validation with the same Python rules used by the CLI, including
-a strict Pydantic schema that rejects unknown YAML fields. It then streams fake
-downstream action events for now. It does not call Docker, OCI, or the
-deployment CLI yet.
+a strict Pydantic schema that rejects unknown YAML fields. The `Review dry run`
+action invokes the real Python CLI with `--dry-run deploy` and streams its
+output back to the UI. Other downstream actions still stream preview events and
+do not call Docker or OCI yet.
 
 Start the FastAPI backend from the repository root:
 
