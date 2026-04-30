@@ -526,6 +526,16 @@ button:disabled {
   font-size: 15px;
 }
 
+.runTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runTitle svg {
+  color: var(--accent);
+}
+
 .runPanel p {
   margin-top: 6px;
   color: var(--muted);
@@ -533,16 +543,103 @@ button:disabled {
   line-height: 1.45;
 }
 
+.runBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  margin-top: 14px;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.runBadge.running {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.runBadge.succeeded {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.runBadge.failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .runLog {
-  min-height: 58px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  max-height: 210px;
+  min-height: 118px;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fffdf9;
-  padding: 12px;
+  padding: 10px;
   color: #5c665c;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.emptyLog {
+  margin: 0;
+  align-self: center;
+}
+
+.logLine {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid rgba(33, 37, 31, 0.07);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 10px;
+}
+
+.logLine span {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 0;
+  border-radius: 8px;
+  padding: 3px 7px;
+  background: #eef2f0;
+  color: #51615a;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.logLine p {
+  margin: 0;
+  color: #35433d;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, ui-monospace,
+    monospace;
+  font-size: 12px;
+}
+
+.logLine.success span,
+.logLine.done span {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.logLine.error span {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.logLine.warning span {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 @media (max-width: 1120px) {

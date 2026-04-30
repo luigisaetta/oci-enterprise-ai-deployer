@@ -90,11 +90,15 @@ python -m pip install -e .
 
 Required Python dependencies are listed in `requirements.txt`:
 
+- `fastapi`
 - `oci-cli==3.81.0`
+- `pydantic`
 - `python-dotenv`
 - `PyYAML`
 - `rich`
+- `uvicorn`
 - `black`
+- `httpx`
 - `pylint`
 - `pytest`
 - `pytest-cov`
@@ -145,8 +149,23 @@ oci-ai-deploy-menu
 
 The repository includes a Next.js interface prototype in `apps/deployer-web`.
 It currently implements a UI-only workflow for uploading, viewing, editing, and
-previewing YAML and `.env` deployment files. Actions are intentionally fake for
-now and do not call Docker, OCI, or the Python CLI.
+previewing YAML and `.env` deployment files. Actions stream fake backend events
+for now and do not call Docker, OCI, or the Python CLI.
+
+Start the FastAPI backend from the repository root:
+
+```bash
+conda run -n oci-enterprise-ai-deployer python -m uvicorn \
+  enterprise_ai_deployment.api:app \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+The API listens on:
+
+```text
+http://localhost:8000
+```
 
 From the web app directory:
 
@@ -160,6 +179,17 @@ Then open:
 ```text
 http://localhost:3000
 ```
+
+If the backend runs on a different URL, start Next.js with:
+
+```bash
+NEXT_PUBLIC_DEPLOYER_API_URL=http://localhost:8000 npm run dev
+```
+
+The `dev` and `build` scripts clean the local `.next` directory before starting.
+If the CSS ever appears stale during local development, stop the dev server and
+start it again with `npm run dev`. Do not run `npm run build` while a dev server
+for the same app is still running.
 
 ## Configure A Deployment
 

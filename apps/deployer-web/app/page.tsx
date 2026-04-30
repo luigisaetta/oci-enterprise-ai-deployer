@@ -16,9 +16,10 @@ import {
   RotateCcw,
   Save,
   Settings2,
+  TerminalSquare,
   UploadCloud,
 } from "lucide-react";
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useMemo, useRef, useState } from "react";
 
 type FileKind = "yaml" | "env";
 
@@ -30,12 +31,22 @@ type UploadedFile = {
 
 type ActionKey = "validate" | "render" | "dry-run" | "deploy";
 
+type RunEvent = {
+  id: number;
+  kind: "status" | "log" | "done" | "error";
+  level?: "info" | "success" | "warning" | "error";
+  message: string;
+};
+
 const ACTIONS: Record<ActionKey, string> = {
   validate: "Validate configuration",
   render: "Render JSON artifacts",
   "dry-run": "Review dry run",
   deploy: "Deploy",
 };
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_DEPLOYER_API_URL ?? "http://localhost:8000";
 
 const SAMPLE_YAML = `application:
   name: my-agent-app-dev
@@ -86,7 +97,12 @@ export default function DeployerConsole() {
   const [profile, setProfile] = useState("DEFAULT");
   const [region, setRegion] = useState("eu-frankfurt-1");
   const [outputDir, setOutputDir] = useState("enterprise_ai_deployment/generated");
-  const [lastRun, setLastRun] = useState<string | null>(null);
+  const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
+  const [runState, setRunState] = useState<"idle" | "running" | "succeeded" | "failed">(
+    "idle",
+  );
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const eventCounterRef = useRef(0);
 
   const readiness = useMemo(() => {
     const checks = [
@@ -132,22 +148,120 @@ export default function DeployerConsole() {
     setEnvFile(null);
     setYamlContent(SAMPLE_YAML);
     setEnvContent(SAMPLE_ENV);
-    setLastRun(null);
+    setRunEvents([]);
+    setRunState("idle");
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
   }
 
-  function runFakeAction() {
+  function pushRunEvent(event: Omit<RunEvent, "id">) {
+    eventCounterRef.current += 1;
+    setRunEvents((current) => [
+      ...current,
+      {
+        id: eventCounterRef.current,
+        ...event,
+      },
+    ]);
+  }
+
+  async function runFakeAction() {
     if (!canRun) {
       return;
     }
 
-    const timestamp = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
+    eventSourceRef.current?.close();
+    eventCounterRef.current = 0;
+    setRunEvents([]);
+    setRunState("running");
+    pushRunEvent({
+      kind: "status",
+      message: `Starting ${ACTIONS[selectedAction].toLowerCase()} preview.`,
     });
-    setLastRun(
-      `${timestamp} · ${ACTIONS[selectedAction]} queued as a UI-only preview. No files were written and no OCI command was executed.`,
-    );
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/actions/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          yaml: yamlContent,
+          env: envContent,
+          action: selectedAction,
+          profile,
+          region,
+          output_dir: outputDir,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Backend returned HTTP ${response.status}`);
+      }
+
+      const data = (await response.json()) as { run_id: string };
+      const source = new EventSource(`${API_BASE_URL}/api/runs/${data.run_id}/events`);
+      eventSourceRef.current = source;
+
+      source.addEventListener("status", (event) => {
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          state: string;
+          step: string;
+        };
+        pushRunEvent({
+          kind: "status",
+          message: `Status: ${payload.state} · Step: ${payload.step}`,
+        });
+      });
+
+      source.addEventListener("log", (event) => {
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          level: RunEvent["level"];
+          message: string;
+        };
+        pushRunEvent({
+          kind: "log",
+          level: payload.level ?? "info",
+          message: payload.message,
+        });
+      });
+
+      source.addEventListener("done", (event) => {
+        const payload = JSON.parse((event as MessageEvent).data) as {
+          state: "succeeded" | "failed";
+          message: string;
+        };
+        setRunState(payload.state);
+        pushRunEvent({
+          kind: "done",
+          level: payload.state === "succeeded" ? "success" : "error",
+          message: payload.message,
+        });
+        source.close();
+        eventSourceRef.current = null;
+      });
+
+      source.onerror = () => {
+        setRunState("failed");
+        pushRunEvent({
+          kind: "error",
+          level: "error",
+          message: "Streaming connection failed. Check that the FastAPI backend is running.",
+        });
+        source.close();
+        eventSourceRef.current = null;
+      };
+    } catch (error) {
+      setRunState("failed");
+      pushRunEvent({
+        kind: "error",
+        level: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to start the preview run.",
+      });
+    }
   }
 
   return (
@@ -325,15 +439,28 @@ export default function DeployerConsole() {
 
         <section className="runPanel">
           <div>
-            <h3>{ACTIONS[selectedAction]}</h3>
+            <div className="runTitle">
+              <TerminalSquare size={18} aria-hidden="true" />
+              <h3>{ACTIONS[selectedAction]}</h3>
+            </div>
             <p>
               Profile <strong>{profile || "Not set"}</strong> · Region{" "}
               <strong>{region || "Not set"}</strong> · Output{" "}
               <strong>{outputDir || "Not set"}</strong>
             </p>
+            <span className={`runBadge ${runState}`}>{runState}</span>
           </div>
           <div className="runLog">
-            {lastRun ?? "No action has been launched in this UI session."}
+            {runEvents.length === 0 ? (
+              <p className="emptyLog">No action has been launched in this UI session.</p>
+            ) : (
+              runEvents.map((event) => (
+                <div className={`logLine ${event.level ?? event.kind}`} key={event.id}>
+                  <span>{event.kind}</span>
+                  <p>{event.message}</p>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </section>
