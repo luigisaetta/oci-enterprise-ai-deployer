@@ -89,6 +89,7 @@ python -m pip install -e .
 
 Required Python dependencies are listed in `requirements.txt`:
 
+- `oci-cli==3.81.0`
 - `python-dotenv`
 - `PyYAML`
 - `rich`
@@ -97,12 +98,28 @@ Required Python dependencies are listed in `requirements.txt`:
 - `pytest`
 - `pytest-cov`
 
+`oci-cli==3.81.0` installs the compatible OCI Python SDK dependency
+`oci==2.173.0` and includes the Hosted Application and Hosted Deployment
+commands used by this project.
+
 External tools required for real deployments:
 
 - Docker Engine
-- OCI CLI
 - OCI CLI profile or environment configured for the target tenancy
 - OCIR login for the target region
+
+Confirm that the Conda environment CLI is the one being used:
+
+```bash
+which oci
+oci --version
+oci generative-ai hosted-application --help
+oci generative-ai hosted-deployment --help
+```
+
+The expected CLI version is `3.81.0`. If `which oci` points outside the Conda
+environment, activate `oci-enterprise-ai-deployer` again or call
+`$CONDA_PREFIX/bin/oci` explicitly.
 
 Run the test suite with the dedicated Conda environment:
 

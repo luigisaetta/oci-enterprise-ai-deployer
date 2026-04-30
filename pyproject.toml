@@ -16,8 +16,9 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "L. Saetta" }]
 dependencies = [
+  "oci-cli==3.81.0",
   "python-dotenv>=1.0.0",
-  "PyYAML>=6.0",
+  "PyYAML>=6.0,<=6.0.2",
   "rich>=13.0.0",
 ]
 

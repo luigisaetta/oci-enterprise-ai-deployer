@@ -30,6 +30,9 @@ same change.
   tests and local validation commands. Run test commands through
   `conda run -n oci-enterprise-ai-deployer ...` unless the environment is
   already active in the current shell.
+- Use the OCI CLI installed in that environment. The project expects
+  `oci-cli==3.81.0`, which includes the required `generative-ai
+  hosted-application` and `generative-ai hosted-deployment` commands.
 - Preserve the declared version 1 constraints unless the specifications are
   intentionally revised.
 - Prefer small, testable Python modules over large command-oriented scripts.
