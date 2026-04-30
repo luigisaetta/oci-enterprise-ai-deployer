@@ -78,6 +78,35 @@ def test_preview_run_streams_validation_failure() -> None:
     assert "container: Field required" in body
 
 
+def test_render_run_streams_real_cli_render() -> None:
+    """Render action streams output from the real CLI render command."""
+    RUNS.clear()
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/actions/preview",
+        json={
+            "yaml": _valid_web_yaml(),
+            "env": "LOG_LEVEL=INFO\n",
+            "action": "render",
+            "profile": "DEFAULT",
+            "region": "eu-frankfurt-1",
+            "output_dir": "generated/web-test",
+        },
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+
+    with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+        body = "".join(stream.iter_text())
+
+    assert "Starting real CLI render." in body
+    assert "Generated OCI CLI JSON artifacts:" in body
+    assert "generated/web-test/create-hosted-application.json" in body
+    assert "CLI render completed successfully." in body
+
+
 def test_unknown_run_stream_returns_404() -> None:
     """Unknown run ids produce a clear 404."""
     client = TestClient(create_app())

@@ -185,7 +185,30 @@ async def _fake_run_event_stream(run: StoredRun):
     await asyncio.sleep(0.45)
 
     if run.action == "dry-run":
-        async for event in _stream_cli_dry_run(run):
+        async for event in _stream_cli_command(
+            run,
+            cli_command="deploy",
+            step="cli-dry-run",
+            start_message=(
+                "Starting real CLI dry-run. No Docker or OCI command will be executed."
+            ),
+            success_message="CLI dry-run completed successfully.",
+            failure_message="CLI dry-run failed",
+            dry_run=True,
+        ):
+            yield event
+        return
+
+    if run.action == "render":
+        async for event in _stream_cli_command(
+            run,
+            cli_command="render",
+            step="cli-render",
+            start_message="Starting real CLI render.",
+            success_message="CLI render completed successfully.",
+            failure_message="CLI render failed",
+            dry_run=False,
+        ):
             yield event
         return
 
@@ -237,8 +260,17 @@ def _validate_uploaded_inputs(run: StoredRun) -> str | None:
     return None
 
 
-async def _stream_cli_dry_run(run: StoredRun):
-    """Run the real CLI dry-run command and stream its output as SSE."""
+async def _stream_cli_command(
+    run: StoredRun,
+    *,
+    cli_command: str,
+    step: str,
+    start_message: str,
+    success_message: str,
+    failure_message: str,
+    dry_run: bool,
+):
+    """Run a real CLI command and stream its output as SSE."""
     repo_root = Path.cwd()
     yaml_path: Path | None = None
     env_path: Path | None = None
@@ -274,19 +306,20 @@ async def _stream_cli_dry_run(run: StoredRun):
             str(env_path),
             "--output-dir",
             run.output_dir,
-            "--dry-run",
-            "deploy",
         ]
+        if dry_run:
+            command.append("--dry-run")
+        command.append(cli_command)
 
         yield _to_sse(
             "status",
-            {"state": "running", "step": "cli-dry-run"},
+            {"state": "running", "step": step},
         )
         yield _to_sse(
             "log",
             {
                 "level": "info",
-                "message": "Starting real CLI dry-run. No Docker or OCI command will be executed.",
+                "message": start_message,
             },
         )
 
@@ -314,7 +347,7 @@ async def _stream_cli_dry_run(run: StoredRun):
                 {
                     "state": "succeeded",
                     "step": "complete",
-                    "message": "CLI dry-run completed successfully.",
+                    "message": success_message,
                 },
             )
         else:
@@ -322,8 +355,8 @@ async def _stream_cli_dry_run(run: StoredRun):
                 "done",
                 {
                     "state": "failed",
-                    "step": "cli-dry-run",
-                    "message": f"CLI dry-run failed with exit code {return_code}.",
+                    "step": step,
+                    "message": f"{failure_message} with exit code {return_code}.",
                 },
             )
     except OSError as exc:
@@ -331,8 +364,8 @@ async def _stream_cli_dry_run(run: StoredRun):
             "done",
             {
                 "state": "failed",
-                "step": "cli-dry-run",
-                "message": f"Unable to start CLI dry-run: {exc}",
+                "step": step,
+                "message": f"Unable to start CLI command: {exc}",
             },
         )
     finally:

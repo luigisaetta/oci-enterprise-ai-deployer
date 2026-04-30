@@ -153,8 +153,9 @@ previewing YAML and `.env` deployment files. The backend performs real YAML and
 configuration validation with the same Python rules used by the CLI, including
 a strict Pydantic schema that rejects unknown YAML fields. The `Review dry run`
 action invokes the real Python CLI with `--dry-run deploy` and streams its
-output back to the UI. Other downstream actions still stream preview events and
-do not call Docker or OCI yet.
+output back to the UI. The `Render JSON artifacts` action also invokes the real
+Python CLI and streams the generated artifact paths. Other downstream actions
+still stream preview events and do not call Docker or OCI yet.
 
 Start the FastAPI backend from the repository root:
 
