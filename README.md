@@ -1,5 +1,10 @@
 # OCI Enterprise AI Deployer
 
+Author: L. Saetta
+Version: 0.1.0
+Last modified: 2026-04-30
+License: MIT
+
 ![Black](https://img.shields.io/badge/code%20style-black-000000.svg)
 ![Pylint](https://img.shields.io/badge/pylint-10.00%2F10-brightgreen.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)

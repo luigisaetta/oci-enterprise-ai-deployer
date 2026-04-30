@@ -1,4 +1,8 @@
 # First editable deployment template for OCI Enterprise AI.
+# Author: L. Saetta
+# Version: 0.1.0
+# Last modified: 2026-04-30
+# License: MIT
 # Replace placeholder OCIDs, names, and image settings before running without --dry-run.
 
 application:

@@ -1,5 +1,9 @@
 # Implementation Spec for Codex
 
+Author: L. Saetta
+Version: 0.1.0
+Last modified: 2026-04-30
+
 ## 1. Document Purpose
 
 This document guides Codex-assisted development of the tool for automated deployment of containerized AI components on OCI Enterprise AI.

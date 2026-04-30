@@ -1,6 +1,7 @@
 """
 Author: L. Saetta
-Last modified: 2026-04-29
+Version: 0.1.0
+Last modified: 2026-04-30
 License: MIT
 
 Description:
