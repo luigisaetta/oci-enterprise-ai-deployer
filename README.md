@@ -6,10 +6,10 @@
 ![Pytest](https://img.shields.io/badge/tests-pytest-blue.svg)
 
 `oci-enterprise-ai-deployer` is a small Python CLI for building container images
-and deploying OCI Generative AI Enterprise AI Hosted Applications and Hosted
-Deployments from a declarative YAML file.
+and deploying **OCI Enterprise AI Hosted Applications** and **Hosted Deployments** 
+from a declarative YAML file.
 
-The project is intended for repeatable agent deployment workflows where the
+The project is intended for **repeatable agent deployment workflows** where the
 operator wants to review generated OCI CLI commands, render complex JSON
 payloads, build and publish a Docker image to OCIR, reuse an existing Hosted
 Application when possible, and create a Hosted Deployment that points to the
