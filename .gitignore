@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+*.egg-info/
+.pytest_cache/
+.pylint.d/
+.coverage
+htmlcov/
+.venv/
+venv/
+.env
+.env.*
+!*.env.sample
+enterprise_ai_deployment/generated/
+generated/
+dist/
+build/

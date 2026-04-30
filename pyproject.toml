@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oci-enterprise-ai-deployer"
+version = "0.1.0"
+description = "CLI utilities for OCI Enterprise AI Hosted Application deployments."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "L. Saetta" }]
+dependencies = [
+  "python-dotenv>=1.0.0",
+  "PyYAML>=6.0",
+  "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.0.0",
+  "pylint>=3.0.0",
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+]
+
+[project.scripts]
+oci-ai-deploy = "enterprise_ai_deployment.deployment_runner:main"
+oci-ai-deploy-menu = "enterprise_ai_deployment.menu:main"
+
+[tool.setuptools.packages.find]
+include = ["enterprise_ai_deployment*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.pylint.main]
+py-version = "3.11"
+ignore = [".git", "__pycache__"]
+
+[tool.pylint.messages_control]
+disable = [
+  "duplicate-code",
+]
