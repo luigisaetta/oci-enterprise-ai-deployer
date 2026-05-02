@@ -48,8 +48,7 @@ class ContainerSchema(StrictModel):
 
     context: NonEmptyString
     dockerfile: NonEmptyString
-    image_name: NonEmptyString
-    repository: NonEmptyString
+    image_repository: NonEmptyString
     tag_strategy: Literal["git_sha", "timestamp", "explicit"]
     ocir_namespace: NonEmptyString
     tag: NonEmptyString | None = None

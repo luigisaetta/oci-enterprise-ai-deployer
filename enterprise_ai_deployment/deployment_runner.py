@@ -14,6 +14,7 @@ import argparse
 import json
 import shlex
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,8 +22,10 @@ from enterprise_ai_deployment.cli_commands import (
     HostedApplicationCreateRequest,
     HostedApplicationJsonOptions,
     HostedDeploymentCreateRequest,
+    build_create_container_repository_command,
     build_create_hosted_application_command,
     build_create_hosted_deployment_command,
+    build_list_container_repositories_command,
     build_list_hosted_applications_command,
 )
 from enterprise_ai_deployment.config import OciCliConfig
@@ -40,7 +43,12 @@ from enterprise_ai_deployment.deployment_validation import (
     DeploymentValidationError,
     validate_deployment_config,
 )
-from enterprise_ai_deployment.ocir import ImageReference, build_image_reference
+from enterprise_ai_deployment.ocir import (
+    ImageReference,
+    build_image_reference,
+    build_ocir_registry,
+    require_docker_login,
+)
 
 
 @dataclass(frozen=True)
@@ -101,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the deployment CLI."""
+    _configure_streaming_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
@@ -108,6 +117,15 @@ def main(argv: list[str] | None = None) -> int:
     except (DeploymentConfigError, DeploymentValidationError, RuntimeError) as exc:
         print(f"Error: {exc}")
         return 1
+
+
+def _configure_streaming_output() -> None:
+    """Prefer line-buffered output when the CLI is streamed by the web API."""
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except AttributeError:
+        return
 
 
 def run_command(args: argparse.Namespace) -> int:
@@ -119,6 +137,7 @@ def run_command(args: argparse.Namespace) -> int:
     )
 
     if args.command == "validate":
+        _validate_local_prerequisites(context)
         print("Configuration is valid.")
     elif args.command == "render":
         _print_all_rendered(context)
@@ -253,6 +272,7 @@ def push_container_image(
 ) -> None:
     """Push the Docker image to OCIR."""
     deployment_context = deployment_context or context.first
+    ensure_ocir_repository(context, args, deployment_context)
     command = build_docker_push_command(deployment_context)
     _print_oci_command("Push Container Image", command)
     if args.dry_run:
@@ -268,6 +288,42 @@ def push_container_image(
 def build_docker_push_command(context: DeploymentExecutionContext) -> list[str]:
     """Build the Docker image push command."""
     return ["docker", "push", context.image_reference.image_uri]
+
+
+def ensure_ocir_repository(
+    context: DeploymentContext,
+    args: argparse.Namespace,
+    deployment_context: DeploymentExecutionContext | None = None,
+) -> None:
+    """Ensure the target OCIR repository exists before pushing an image."""
+    deployment_context = deployment_context or context.first
+    repository_name = build_ocir_repository_name(deployment_context.deployment)
+    cli_config = OciCliConfig(region=context.config.application.region)
+    create_command = build_create_container_repository_command(
+        cli_config,
+        context.config.application.compartment_id,
+        repository_name,
+    )
+    if args.dry_run:
+        _print_oci_command("Ensure OCIR Repository", create_command)
+        print("Dry run: command not executed.")
+        return
+
+    if _find_ocir_repository_id(
+        cli_config,
+        context.config.application.compartment_id,
+        repository_name,
+    ):
+        print(f"Using existing OCIR repository {repository_name!r}.")
+        return
+
+    _print_oci_command("Create OCIR Repository", create_command)
+    _run_oci_command(create_command, "create-ocir-repository")
+
+
+def build_ocir_repository_name(deployment: DeploymentUnitConfig) -> str:
+    """Return the OCIR repository display name for a deployment image."""
+    return deployment.container.image_repository
 
 
 def create_hosted_application(
@@ -333,7 +389,10 @@ def create_hosted_application(
         return "<created-hosted-application-id>"
 
     result = _run_oci_command(command, "create-application")
-    hosted_application_id = _extract_resource_id(result.stdout)
+    hosted_application_id = _extract_created_resource_identifier(
+        result.stdout,
+        ocid_prefix="ocid1.generativeaihostedapplication.",
+    )
     if not hosted_application_id:
         raise RuntimeError(
             "create-application succeeded but no Hosted Application OCID was found "
@@ -390,6 +449,12 @@ def _prepare_context(args: argparse.Namespace, render: bool) -> DeploymentContex
         for deployment in config.deployments
     )
     return DeploymentContext(config=config, deployments=deployments)
+
+
+def _validate_local_prerequisites(context: DeploymentContext) -> None:
+    """Validate local prerequisites that can be checked without remote changes."""
+    registry = build_ocir_registry(context.config.application.region_key)
+    require_docker_login(registry)
 
 
 def _prepare_deployment_context(
@@ -632,6 +697,31 @@ def _find_hosted_application_id_by_name(
     return _first_string(matches[0], "id")
 
 
+def _find_ocir_repository_id(
+    cli_config: OciCliConfig, compartment_id: str, display_name: str
+) -> str | None:
+    """Return an existing OCIR repository OCID with the requested display name."""
+    command = build_list_container_repositories_command(
+        cli_config,
+        compartment_id,
+        display_name,
+    )
+    _print_oci_command("Find Existing OCIR Repository", command)
+    result = _run_oci_command(command, "list-ocir-repositories")
+    items = _extract_list_items(result.stdout)
+    matches = [
+        item
+        for item in items
+        if _first_string(item, "display-name", "displayName", "name") == display_name
+        and _first_string(item, "id")
+        and _first_string(item, "lifecycle-state", "lifecycleState").upper()
+        not in {"DELETED", "DELETING"}
+    ]
+    if not matches:
+        return None
+    return _first_string(matches[0], "id")
+
+
 def _extract_list_items(stdout: str) -> list[dict[str, object]]:
     """Extract OCI CLI list items from common response shapes."""
     try:
@@ -674,22 +764,53 @@ def _extract_resource_id(stdout: str) -> str | None:
     return _find_ocid(payload)
 
 
-def _find_ocid(value: object) -> str | None:
+def _extract_created_resource_identifier(
+    stdout: str, ocid_prefix: str | None = None
+) -> str | None:
+    """Extract the created resource OCID, preferring OCI identifier fields."""
+    try:
+        payload = json.loads(stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    return _find_ocid(
+        payload,
+        preferred_keys=("identifier", "resourceId", "resource-id"),
+        ocid_prefix=ocid_prefix,
+    )
+
+
+def _find_ocid(
+    value: object,
+    preferred_keys: tuple[str, ...] = ("id", "identifier", "resourceId", "resource-id"),
+    ocid_prefix: str | None = None,
+) -> str | None:
     """Find the first OCI resource identifier in a nested response payload."""
-    if isinstance(value, str) and value.startswith("ocid1."):
+    if isinstance(value, str) and value.startswith(ocid_prefix or "ocid1."):
         return value
     if isinstance(value, dict):
-        for key in ("id", "identifier", "resourceId", "resource-id"):
-            found = _find_ocid(value.get(key))
+        for key in preferred_keys:
+            found = _find_ocid(
+                value.get(key),
+                preferred_keys=preferred_keys,
+                ocid_prefix=ocid_prefix,
+            )
             if found:
                 return found
         for child in value.values():
-            found = _find_ocid(child)
+            found = _find_ocid(
+                child,
+                preferred_keys=preferred_keys,
+                ocid_prefix=ocid_prefix,
+            )
             if found:
                 return found
     if isinstance(value, list):
         for child in value:
-            found = _find_ocid(child)
+            found = _find_ocid(
+                child,
+                preferred_keys=preferred_keys,
+                ocid_prefix=ocid_prefix,
+            )
             if found:
                 return found
     return None

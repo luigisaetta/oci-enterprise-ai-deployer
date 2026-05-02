@@ -14,8 +14,7 @@ application:
 container:
   context: ../../examples/hello_world_container
   dockerfile: Dockerfile
-  image_name: enterprise-ai-hello-world
-  repository: ai-agents
+  image_repository: ai-agents/enterprise-ai-hello-world
   tag_strategy: git_sha
   ocir_namespace: auto
 

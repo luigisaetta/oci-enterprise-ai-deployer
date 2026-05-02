@@ -33,8 +33,12 @@ from enterprise_ai_deployment.deployment_validation import (
     DeploymentValidationError,
     validate_deployment_config,
 )
+from enterprise_ai_deployment.ocir import build_ocir_registry, require_docker_login
 
 RunAction = Literal["validate", "render", "dry-run", "build", "deploy"]
+OCI_WAIT_WARNING = (
+    "Encountered error while waiting for work request to enter the specified state"
+)
 
 
 class RunRequest(BaseModel):
@@ -65,6 +69,14 @@ class StoredRun:
     profile: str
     region: str
     output_dir: str
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+    """Result of uploaded input validation for the web console."""
+
+    error: str | None = None
+    ocir_registry: str | None = None
 
 
 RUNS: dict[str, StoredRun] = {}
@@ -120,7 +132,7 @@ def create_app() -> FastAPI:
 
 
 async def _fake_run_event_stream(run: StoredRun):
-    """Yield SSE messages for real validation and fake downstream actions."""
+    """Yield SSE messages for real validation and CLI-backed actions."""
     yaml_lines = len(run.yaml.splitlines())
     env_lines = len(run.env.splitlines())
     initial_steps = [
@@ -129,7 +141,7 @@ async def _fake_run_event_stream(run: StoredRun):
             "log",
             {
                 "level": "info",
-                "message": f"Accepted {run.action} preview for profile {run.profile}.",
+                "message": f"Accepted {run.action} action for profile {run.profile}.",
             },
         ),
         (
@@ -156,13 +168,13 @@ async def _fake_run_event_stream(run: StoredRun):
         yield _to_sse(event_name, payload)
         await asyncio.sleep(0.45)
 
-    validation_error = _validate_uploaded_inputs(run)
-    if validation_error:
+    validation_result = _validate_uploaded_inputs(run)
+    if validation_result.error:
         yield _to_sse(
             "log",
             {
                 "level": "error",
-                "message": validation_error,
+                "message": validation_result.error,
             },
         )
         yield _to_sse(
@@ -183,6 +195,18 @@ async def _fake_run_event_stream(run: StoredRun):
         },
     )
     await asyncio.sleep(0.45)
+    if validation_result.ocir_registry:
+        yield _to_sse(
+            "log",
+            {
+                "level": "success",
+                "message": (
+                    "Docker login detected for target OCIR registry "
+                    f"{validation_result.ocir_registry}."
+                ),
+            },
+        )
+        await asyncio.sleep(0.45)
 
     if run.action == "dry-run":
         async for event in _stream_cli_command(
@@ -225,6 +249,22 @@ async def _fake_run_event_stream(run: StoredRun):
             yield event
         return
 
+    if run.action == "deploy":
+        async for event in _stream_cli_command(
+            run,
+            cli_command="deploy",
+            step="cli-deploy",
+            start_message=(
+                "Starting real CLI deployment. Docker build, Docker push, and OCI "
+                "resource commands may be executed."
+            ),
+            success_message="CLI deployment completed successfully.",
+            failure_message="CLI deployment failed",
+            dry_run=False,
+        ):
+            yield event
+        return
+
     follow_up_steps = [
         (
             "status",
@@ -254,7 +294,7 @@ async def _fake_run_event_stream(run: StoredRun):
         await asyncio.sleep(0.45)
 
 
-def _validate_uploaded_inputs(run: StoredRun) -> str | None:
+def _validate_uploaded_inputs(run: StoredRun) -> ValidationResult:
     """Validate uploaded YAML and env content with the existing Python rules."""
     repo_root = Path.cwd()
     try:
@@ -268,9 +308,11 @@ def _validate_uploaded_inputs(run: StoredRun) -> str | None:
             config = load_deployment_config(yaml_path, env_file=env_path)
             config = replace(config, source_path=repo_root / "deployment.yaml")
             validate_deployment_config(config)
-    except (DeploymentConfigError, DeploymentValidationError) as exc:
-        return str(exc)
-    return None
+            ocir_registry = build_ocir_registry(config.application.region_key)
+            require_docker_login(ocir_registry)
+    except (DeploymentConfigError, DeploymentValidationError, RuntimeError) as exc:
+        return ValidationResult(error=str(exc))
+    return ValidationResult(ocir_registry=ocir_registry)
 
 
 async def _stream_cli_command(
@@ -312,6 +354,7 @@ async def _stream_cli_command(
 
         command = [
             sys.executable,
+            "-u",
             "oci_ai_deploy.py",
             "--config",
             str(yaml_path),
@@ -339,6 +382,7 @@ async def _stream_cli_command(
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=repo_root,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -351,7 +395,13 @@ async def _stream_cli_command(
                 break
             message = line.decode("utf-8", errors="replace").rstrip()
             if message:
-                yield _to_sse("log", {"level": "info", "message": message})
+                yield _to_sse(
+                    "log",
+                    {
+                        "level": _cli_log_level(message),
+                        "message": message,
+                    },
+                )
 
         return_code = await process.wait()
         if return_code == 0:
@@ -388,6 +438,13 @@ async def _stream_cli_command(
                     os.unlink(path)
                 except FileNotFoundError:
                     pass
+
+
+def _cli_log_level(message: str) -> str:
+    """Return the UI log severity for one CLI output line."""
+    if OCI_WAIT_WARNING in message:
+        return "warning"
+    return "info"
 
 
 def _to_sse(event_name: str, payload: dict[str, str]) -> str:

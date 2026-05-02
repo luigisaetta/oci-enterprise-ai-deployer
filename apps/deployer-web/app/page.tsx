@@ -58,8 +58,7 @@ const SAMPLE_YAML = `application:
 container:
   context: examples/hello_world_container
   dockerfile: Dockerfile
-  repository: enterprise-ai
-  image_name: sample-agent
+  image_repository: enterprise-ai/sample-agent
   tag_strategy: explicit
   ocir_namespace: auto
   tag: dev
@@ -170,7 +169,7 @@ export default function DeployerConsole() {
     ]);
   }
 
-  async function runFakeAction() {
+  async function runAction() {
     if (!canRun) {
       return;
     }
@@ -181,7 +180,7 @@ export default function DeployerConsole() {
     setRunState("running");
     pushRunEvent({
       kind: "status",
-      message: `Starting ${ACTIONS[selectedAction].toLowerCase()} preview.`,
+      message: `Starting ${ACTIONS[selectedAction].toLowerCase()}.`,
     });
 
     try {
@@ -386,7 +385,7 @@ export default function DeployerConsole() {
             <button
               className="primaryButton"
               type="button"
-              onClick={runFakeAction}
+              onClick={runAction}
               disabled={!canRun}
             >
               <Play size={17} aria-hidden="true" />

@@ -76,6 +76,19 @@ def build_iam_base_command(config: OciCliConfig) -> list[str]:
     return command
 
 
+def build_artifacts_base_command(config: OciCliConfig) -> list[str]:
+    """Build the common OCI Artifacts CLI command prefix."""
+    command = ["oci"]
+    if config.profile:
+        command.extend(["--profile", config.profile])
+    if config.region:
+        command.extend(["--region", config.region])
+    if config.output:
+        command.extend(["--output", config.output])
+    command.extend(["artifacts"])
+    return command
+
+
 def normalize_file_uri(path_or_uri: str) -> str:
     """Return an OCI CLI file URI for a local JSON path."""
     value = path_or_uri.strip()
@@ -121,6 +134,43 @@ def build_list_hosted_applications_command(
         "--compartment-id",
         compartment_id,
         "--all",
+    ]
+
+
+def build_list_container_repositories_command(
+    config: OciCliConfig, compartment_id: str, display_name: str
+) -> list[str]:
+    """Build command for listing OCIR container repositories by display name."""
+    return [
+        *build_artifacts_base_command(config),
+        "container",
+        "repository",
+        "list",
+        "--compartment-id",
+        compartment_id,
+        "--display-name",
+        display_name,
+        "--all",
+    ]
+
+
+def build_create_container_repository_command(
+    config: OciCliConfig, compartment_id: str, display_name: str
+) -> list[str]:
+    """Build command for creating an OCIR container repository."""
+    return [
+        *build_artifacts_base_command(config),
+        "container",
+        "repository",
+        "create",
+        "--compartment-id",
+        compartment_id,
+        "--display-name",
+        display_name,
+        "--is-public",
+        "false",
+        "--wait-for-state",
+        "AVAILABLE",
     ]
 
 

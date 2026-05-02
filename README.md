@@ -33,6 +33,8 @@ Feature evolution is tracked in [FEATURE_HISTORY.md](FEATURE_HISTORY.md).
 - Container image build for `linux/amd64`.
 - OCIR namespace resolution through `oci os ns get` when
   `ocir_namespace: auto` is used.
+- OCIR repository creation before push when first-push repository creation is
+  disabled in the tenancy.
 - Docker image push to OCIR.
 - Hosted Application creation or reuse by display name.
 - Hosted Deployment creation from the resolved container URI and tag.
@@ -98,11 +100,12 @@ review. From the browser, an operator can:
 - render generated OCI CLI JSON artifacts
 - run a dry-run deployment review
 - start the real CLI container build action
+- run the real CLI deployment action
 - inspect streamed action logs and status events
 
-The deploy action in the web interface is intentionally conservative while the
-tool evolves. The authoritative full deployment path is the CLI `deploy`
-command, which builds, pushes, and creates OCI resources.
+The deploy action in the web interface streams the same CLI `deploy` flow used
+from the terminal. A real deploy builds images, pushes them to OCIR, and creates
+or reuses OCI resources.
 
 Start the backend:
 
@@ -189,6 +192,7 @@ A real `deploy` runs:
 resolve OCIR namespace
 render OCI CLI JSON artifacts
 docker build
+ensure OCIR repository exists
 docker push
 create or reuse Hosted Application
 create Hosted Deployment
@@ -224,12 +228,13 @@ Required local tools:
 - OCI CLI installed in the same environment
 - Node.js and npm for the web interface
 - OCI CLI profile or environment configured for the target tenancy
-- Docker login to the target OCIR registry
+- Docker login to the target OCIR registry already completed
 
 Required OCI permissions:
 
 - read and create OCI Generative AI Hosted Applications
 - read and create OCI Generative AI Hosted Deployments
+- read and create target OCIR repositories
 - push images to the target OCIR repository
 - read Vault secrets when YAML references OCI Vault
 
@@ -262,6 +267,11 @@ Log in to OCIR before real pushes:
 ```bash
 docker login fra.ocir.io
 ```
+
+The CLI `validate` command checks the local Docker configuration for a login
+entry matching the configured OCIR registry, for example `fra.ocir.io` when
+`region_key: fra` is used. If the login is missing, validation fails before
+build, push, or deployment work starts.
 
 ## Quickstart
 

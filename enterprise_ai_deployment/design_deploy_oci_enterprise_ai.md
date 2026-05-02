@@ -181,7 +181,7 @@ The script checks that the following are available:
 - OCI CLI
 - compatible OCI CLI version
 - working OCI configuration
-- valid or possible OCIR login
+- Docker login already completed for the target OCIR registry
 - valid YAML file
 - compartment id
 - consistent region and region key
@@ -254,7 +254,7 @@ The script builds the full OCIR image name.
 Example:
 
 ```text
-fra.ocir.io/<namespace>/<repository>/<image-name>:<tag>
+fra.ocir.io/<namespace>/<image-repository>:<tag>
 ```
 
 The tag should be unique, for example:
@@ -266,14 +266,24 @@ The tag should be unique, for example:
 
 Using `latest` for real deployments should be avoided.
 
-### 5.6 Push to OCIR
+### 5.6 Ensure OCIR Repository and Push to OCIR
 
-The script pushes the image.
+The script ensures that the target OCIR repository exists before pushing. This
+is required in tenancies where first-push repository creation is disabled.
+
+The repository display name is the configured image repository without
+namespace and tag:
+
+```text
+<image-repository>
+```
+
+The script then pushes the image.
 
 Example:
 
 ```bash
-docker push fra.ocir.io/<namespace>/<repository>/<image-name>:<tag>
+docker push fra.ocir.io/<namespace>/<image-repository>:<tag>
 ```
 
 ### 5.7 Hosted Application Creation or Reuse
@@ -355,8 +365,7 @@ deployments:
     container:
       context: ./agent-api
       dockerfile: Dockerfile
-      image_name: agent-api
-      repository: ai-agents
+      image_repository: ai-agents/agent-api
       tag_strategy: git_sha
       ocir_namespace: auto
 
@@ -395,8 +404,7 @@ deployments:
     container:
       context: ./mcp-server
       dockerfile: Dockerfile
-      image_name: mcp-server
-      repository: ai-agents
+      image_repository: ai-agents/mcp-server
       tag_strategy: git_sha
       ocir_namespace: auto
 
@@ -432,8 +440,7 @@ application:
 container:
   context: .
   dockerfile: Dockerfile
-  image_name: my-agent
-  repository: ai-agents
+  image_repository: ai-agents/my-agent
   tag_strategy: git_sha
   ocir_namespace: auto
 
@@ -538,11 +545,12 @@ Possible menu mode for manual use:
 1. Validate configuration
 2. Dry run
 3. Build Docker image
-4. Push image to OCIR
-5. Create or update Hosted Application
-6. Create Hosted Deployment
-7. Full deploy
-8. Show current deployments
+4. Ensure OCIR repository exists
+5. Push image to OCIR
+6. Create or update Hosted Application
+7. Create Hosted Deployment
+8. Full deploy
+9. Show current deployments
 9. Rollback
 ```
 
@@ -734,6 +742,7 @@ The `validate` phase should check at least:
 - `docker` available in `PATH`
 - working OCI authentication
 - retrievable OCIR namespace
+- local Docker configuration contains a login for the target OCIR registry
 - syntactically valid compartment id
 - region set
 - region key set

@@ -48,8 +48,7 @@ deployments:
     container:
       context: ../../examples/hello_world_container
       dockerfile: Dockerfile
-      image_name: enterprise-ai-agent-api
-      repository: ai-agents
+      image_repository: ai-agents/enterprise-ai-agent-api
       tag_strategy: git_sha
       ocir_namespace: auto
     hosted_application:

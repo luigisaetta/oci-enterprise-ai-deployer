@@ -25,7 +25,11 @@ from enterprise_ai_deployment.deployment_validation import (
     DeploymentValidationError,
     validate_deployment_config,
 )
-from enterprise_ai_deployment.ocir import ImageReference, build_image_reference
+from enterprise_ai_deployment.ocir import (
+    ImageReference,
+    build_image_reference,
+    docker_login_exists,
+)
 
 
 def test_load_deployment_config_reads_yaml_and_env_file(tmp_path, monkeypatch) -> None:
@@ -84,6 +88,28 @@ def test_load_deployment_config_requires_explicit_tag(tmp_path) -> None:
     assert "container.tag is required when tag_strategy is explicit" in str(
         exc_info.value
     )
+
+
+def test_load_deployment_config_rejects_legacy_image_fields(tmp_path) -> None:
+    """Legacy repository/image_name fields are no longer accepted."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(
+        _valid_yaml(tmp_path).replace(
+            "image_repository: ai-agents/demo-agent",
+            "image_name: demo-agent\n  repository: ai-agents",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DeploymentConfigError) as exc_info:
+        load_deployment_config(config_path)
+
+    message = str(exc_info.value)
+    assert "container.image_repository" in message
+    assert "container.image_name" in message
+    assert "container.repository" in message
 
 
 def test_load_enterprise_solution_config_reads_multiple_deployments(
@@ -215,6 +241,74 @@ def test_build_image_reference_uses_explicit_tag(tmp_path, monkeypatch) -> None:
     )
 
 
+def test_docker_login_exists_reads_docker_auth_config(tmp_path) -> None:
+    """Docker auth config is enough to detect an existing OCIR login."""
+    docker_config = tmp_path / "docker"
+    docker_config.mkdir()
+    (docker_config / "config.json").write_text(
+        json.dumps({"auths": {"fra.ocir.io": {"auth": "encoded"}}}),
+        encoding="utf-8",
+    )
+
+    assert docker_login_exists("fra.ocir.io", docker_config)
+    assert not docker_login_exists("iad.ocir.io", docker_config)
+
+
+def test_validate_requires_ocir_docker_login(tmp_path, monkeypatch, capsys) -> None:
+    """CLI validate reports a missing Docker login for the target OCIR registry."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    docker_config = tmp_path / "docker"
+    docker_config.mkdir()
+    monkeypatch.setenv("DOCKER_CONFIG", str(docker_config))
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "validate",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Docker is not logged in to the target OCIR registry 'fra.ocir.io'" in (
+        captured.out
+    )
+    assert "docker login fra.ocir.io" in captured.out
+
+
+def test_validate_accepts_ocir_docker_login(tmp_path, monkeypatch, capsys) -> None:
+    """CLI validate succeeds when Docker config contains target OCIR credentials."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    docker_config = tmp_path / "docker"
+    docker_config.mkdir()
+    (docker_config / "config.json").write_text(
+        json.dumps({"auths": {"fra.ocir.io": {"auth": "encoded"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DOCKER_CONFIG", str(docker_config))
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "validate",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Configuration is valid." in captured.out
+
+
 def test_build_dry_run_renders_docker_command(tmp_path, monkeypatch, capsys) -> None:
     """Dry-run build renders the Docker command without running subprocesses."""
     monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
@@ -331,7 +425,7 @@ def test_push_dry_run_renders_docker_push_command(
 
 
 def test_push_resolves_namespace_and_runs_docker_push(tmp_path, monkeypatch) -> None:
-    """Push resolves auto OCIR namespace and runs docker push."""
+    """Push ensures the OCIR repository exists before docker push."""
     monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
     (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
     config_path = tmp_path / "deploy.yaml"
@@ -345,6 +439,20 @@ def test_push_resolves_namespace_and_runs_docker_push(tmp_path, monkeypatch) -> 
                 command,
                 0,
                 stdout=json.dumps({"data": "mytenancy"}),
+                stderr="",
+            )
+        if "repository" in command and "list" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": {"items": []}}),
+                stderr="",
+            )
+        if "repository" in command and "create" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": {"id": "ocid1.containerrepo.oc1..repo"}}),
                 stderr="",
             )
         if command[:2] == ["docker", "push"]:
@@ -372,6 +480,41 @@ def test_push_resolves_namespace_and_runs_docker_push(tmp_path, monkeypatch) -> 
             "os",
             "ns",
             "get",
+        ],
+        [
+            "oci",
+            "--region",
+            "eu-frankfurt-1",
+            "--output",
+            "json",
+            "artifacts",
+            "container",
+            "repository",
+            "list",
+            "--compartment-id",
+            "ocid1.compartment.oc1..example",
+            "--display-name",
+            "ai-agents/demo-agent",
+            "--all",
+        ],
+        [
+            "oci",
+            "--region",
+            "eu-frankfurt-1",
+            "--output",
+            "json",
+            "artifacts",
+            "container",
+            "repository",
+            "create",
+            "--compartment-id",
+            "ocid1.compartment.oc1..example",
+            "--display-name",
+            "ai-agents/demo-agent",
+            "--is-public",
+            "false",
+            "--wait-for-state",
+            "AVAILABLE",
         ],
         ["docker", "push", "fra.ocir.io/mytenancy/ai-agents/demo-agent:20260429"],
     ]
@@ -494,6 +637,20 @@ def test_deploy_creates_application_then_deployment(tmp_path, monkeypatch) -> No
             )
         if command[:2] == ["docker", "build"]:
             return subprocess.CompletedProcess(command, 0, stdout="built\n", stderr="")
+        if "repository" in command and "list" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": {"items": []}}),
+                stderr="",
+            )
+        if "repository" in command and "create" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": {"id": "ocid1.containerrepo.oc1..repo"}}),
+                stderr="",
+            )
         if command[:2] == ["docker", "push"]:
             return subprocess.CompletedProcess(command, 0, stdout="pushed\n", stderr="")
         if "list-hosted-applications" in command:
@@ -507,7 +664,16 @@ def test_deploy_creates_application_then_deployment(tmp_path, monkeypatch) -> No
             return subprocess.CompletedProcess(
                 command,
                 0,
-                stdout=json.dumps({"data": {"id": "ocid1.hostedapplication.oc1..app"}}),
+                stdout=json.dumps(
+                    {
+                        "data": {
+                            "id": "ocid1.workrequest.oc1..createapp",
+                            "compartment-id": "ocid1.compartment.oc1..wrong",
+                            "compartmentId": "ocid1.compartment.oc1..wrongCamel",
+                            "identifier": "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..app",
+                        }
+                    }
+                ),
                 stderr="",
             )
         return subprocess.CompletedProcess(
@@ -530,20 +696,26 @@ def test_deploy_creates_application_then_deployment(tmp_path, monkeypatch) -> No
     )
 
     assert exit_code == 0
-    assert len(calls) == 6
+    assert len(calls) == 8
     assert calls[0][-3:] == ["os", "ns", "get"]
     assert calls[1][:2] == ["docker", "build"]
     assert "fra.ocir.io/mytenancy/ai-agents/demo-agent:20260429" in calls[1]
-    assert calls[2] == [
+    assert "repository" in calls[2]
+    assert "list" in calls[2]
+    assert "ai-agents/demo-agent" in calls[2]
+    assert "repository" in calls[3]
+    assert "create" in calls[3]
+    assert "ai-agents/demo-agent" in calls[3]
+    assert calls[4] == [
         "docker",
         "push",
         "fra.ocir.io/mytenancy/ai-agents/demo-agent:20260429",
     ]
-    assert "list-hosted-applications" in calls[3]
-    assert "hosted-application" in calls[4]
-    assert "hosted-deployment" in calls[5]
-    assert "--hosted-application-id" in calls[5]
-    assert "ocid1.hostedapplication.oc1..app" in calls[5]
+    assert "list-hosted-applications" in calls[5]
+    assert "hosted-application" in calls[6]
+    assert "hosted-deployment" in calls[7]
+    assert "--hosted-application-id" in calls[7]
+    assert "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..app" in calls[7]
 
 
 def test_enterprise_solution_deploy_stops_on_first_failed_deployment(
@@ -567,6 +739,20 @@ def test_enterprise_solution_deploy_stops_on_first_failed_deployment(
             )
         if command[:2] == ["docker", "build"]:
             return subprocess.CompletedProcess(command, 0, stdout="built\n", stderr="")
+        if "repository" in command and "list" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": {"items": []}}),
+                stderr="",
+            )
+        if "repository" in command and "create" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": {"id": "ocid1.containerrepo.oc1..repo"}}),
+                stderr="",
+            )
         if command[:2] == ["docker", "push"] and "agent-api:20260429" in command[-1]:
             return subprocess.CompletedProcess(command, 1, stdout="", stderr="denied")
         raise AssertionError(f"unexpected command after failure: {command}")
@@ -617,7 +803,7 @@ def test_create_application_reuses_existing_display_name(
                             "items": [
                                 {
                                     "display-name": "demo-agent",
-                                    "id": "ocid1.hostedapplication.oc1..existing",
+                                    "id": "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..existing",
                                 }
                             ]
                         }
@@ -645,7 +831,10 @@ def test_create_application_reuses_existing_display_name(
     assert len(calls) == 1
     assert "list-hosted-applications" in calls[0]
     assert "Using existing Hosted Application 'demo-agent'" in captured.out
-    assert "ocid1.hostedapplication.oc1..existing" in captured.out
+    assert (
+        "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..existing"
+        in captured.out
+    )
 
 
 def test_create_application_ignores_deleted_display_name_match(
@@ -670,7 +859,7 @@ def test_create_application_ignores_deleted_display_name_match(
                             "items": [
                                 {
                                     "display-name": "demo-agent",
-                                    "id": "ocid1.hostedapplication.oc1..deleted",
+                                    "id": "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..deleted",
                                     "lifecycle-state": "DELETED",
                                 }
                             ]
@@ -684,7 +873,11 @@ def test_create_application_ignores_deleted_display_name_match(
                 command,
                 0,
                 stdout=json.dumps(
-                    {"data": {"id": "ocid1.hostedapplication.oc1..replacement"}}
+                    {
+                        "data": {
+                            "id": "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..replacement"
+                        }
+                    }
                 ),
                 stderr="",
             )
@@ -709,7 +902,10 @@ def test_create_application_ignores_deleted_display_name_match(
     assert "list-hosted-applications" in calls[0]
     assert "hosted-application" in calls[1]
     assert "Using existing Hosted Application" not in captured.out
-    assert "ocid1.hostedapplication.oc1..replacement" in captured.out
+    assert (
+        "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..replacement"
+        in captured.out
+    )
 
 
 def test_create_application_prefers_active_over_deleted_display_name_match(
@@ -734,12 +930,12 @@ def test_create_application_prefers_active_over_deleted_display_name_match(
                             "items": [
                                 {
                                     "display-name": "demo-agent",
-                                    "id": "ocid1.hostedapplication.oc1..deleted",
+                                    "id": "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..deleted",
                                     "lifecycle-state": "DELETED",
                                 },
                                 {
                                     "displayName": "demo-agent",
-                                    "id": "ocid1.hostedapplication.oc1..active",
+                                    "id": "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..active",
                                     "lifecycleState": "ACTIVE",
                                 },
                             ]
@@ -767,7 +963,9 @@ def test_create_application_prefers_active_over_deleted_display_name_match(
     assert exit_code == 0
     assert len(calls) == 1
     assert "Using existing Hosted Application 'demo-agent'" in captured.out
-    assert "ocid1.hostedapplication.oc1..active" in captured.out
+    assert (
+        "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..active" in captured.out
+    )
 
 
 def test_create_deployment_requires_hosted_application_id(
@@ -837,8 +1035,7 @@ application:
 container:
   context: {tmp_path}
   dockerfile: Dockerfile
-  image_name: demo-agent
-  repository: ai-agents
+  image_repository: ai-agents/demo-agent
   tag_strategy: explicit
   tag: "20260429"
   ocir_namespace: auto
@@ -892,8 +1089,7 @@ deployments:
     container:
       context: {tmp_path}
       dockerfile: Dockerfile
-      image_name: agent-api
-      repository: ai-agents
+      image_repository: ai-agents/agent-api
       tag_strategy: explicit
       tag: "20260429"
       ocir_namespace: auto
@@ -932,8 +1128,7 @@ deployments:
     container:
       context: {tmp_path}
       dockerfile: Dockerfile
-      image_name: mcp-server
-      repository: ai-agents
+      image_repository: ai-agents/mcp-server
       tag_strategy: explicit
       tag: "20260429"
       ocir_namespace: auto

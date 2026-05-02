@@ -45,8 +45,7 @@ class ContainerConfig:
 
     context: str
     dockerfile: str
-    image_name: str
-    repository: str
+    image_repository: str
     tag_strategy: str
     ocir_namespace: str
     tag: str | None = None
@@ -192,8 +191,7 @@ def _parse_deployment_unit(schema: DeploymentItemSchema) -> DeploymentUnitConfig
         container=ContainerConfig(
             context=container.context,
             dockerfile=container.dockerfile,
-            image_name=container.image_name,
-            repository=container.repository,
+            image_repository=container.image_repository,
             tag_strategy=container.tag_strategy,
             ocir_namespace=container.ocir_namespace,
             tag=container.tag,

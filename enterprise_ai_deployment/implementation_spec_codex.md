@@ -174,6 +174,8 @@ Expected behavior of `--dry-run`:
 - does not run `docker push`
 - does not call OCI CLI to create or update resources
 - may call non-invasive local commands, if needed, to validate prerequisites
+- assumes Docker login to the target OCIR registry has already been completed;
+  `validate` checks the local Docker configuration and reports a missing login
 - prints the commands that would be executed
 - generates intermediate JSON files in the output directory, if requested
 - masks secrets and sensitive values
@@ -199,8 +201,7 @@ application:
 container:
   context: .
   dockerfile: Dockerfile
-  image_name: my-agent
-  repository: ai-agents
+  image_repository: ai-agents/my-agent
   tag_strategy: git_sha
   ocir_namespace: auto
 
@@ -258,8 +259,7 @@ deployments:
     container:
       context: ./agent-api
       dockerfile: Dockerfile
-      image_name: agent-api
-      repository: ai-agents
+      image_repository: ai-agents/agent-api
       tag_strategy: git_sha
       ocir_namespace: auto
 
@@ -290,8 +290,7 @@ deployments:
     container:
       context: ./mcp-server
       dockerfile: Dockerfile
-      image_name: mcp-server
-      repository: ai-agents
+      image_repository: ai-agents/mcp-server
       tag_strategy: git_sha
       ocir_namespace: auto
 
@@ -436,7 +435,7 @@ Acceptance criteria:
 - supports `tag_strategy: git_sha`
 - supports `tag_strategy: timestamp`
 - supports explicit tag, if provided by the YAML
-- builds image URI in the format `<region_key>.ocir.io/<namespace>/<repository>/<image_name>:<tag>`
+- builds image URI in the format `<region_key>.ocir.io/<namespace>/<image_repository>:<tag>`
 - if `ocir_namespace: auto`, prepares the OCI CLI command required to retrieve it
 - in `dry run`, if the namespace is not known, clearly shows that it will be retrieved at runtime
 - tests cover URI construction and tag strategies
@@ -475,6 +474,8 @@ Implement `docker_ops.py`.
 Acceptance criteria:
 
 - `build` builds the `docker build` command
+- `push` ensures the OCIR container repository exists before pushing, creating
+  `<image_repository>` in the configured compartment when it is missing
 - `push` builds the `docker push` command
 - the OCIR tag is applied correctly
 - in `dry run`, Docker is not invoked
