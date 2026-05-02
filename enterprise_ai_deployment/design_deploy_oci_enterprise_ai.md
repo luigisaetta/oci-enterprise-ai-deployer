@@ -1,8 +1,8 @@
 # Design for Automated Deployment of AI Components on OCI Enterprise AI
 
 Author: L. Saetta
-Version: 1.1
-Last modified: 2026-04-29
+Version: 1.2
+Last modified: 2026-05-02
 
 Note: in this specification, points that still need to be defined are marked as: `TBD`.
 
@@ -49,6 +49,32 @@ In short:
 - OCI CLI as the operational engine
 - Python as the process orchestrator
 
+### 2.1 Enterprise Solution Boundary
+
+The deployment unit for this tool is an Enterprise Solution. An Enterprise
+Solution is a bounded set of one or more deployments that are managed together
+from a single declarative YAML file.
+
+Version 1.2 introduces these mandatory constraints:
+
+- one Enterprise Solution is confined to exactly one OCI region
+- one Enterprise Solution is confined to exactly one OCI compartment
+- all deployments in the Enterprise Solution inherit the same region, region
+  key, and compartment id from the top-level solution settings
+- deployment execution is serial: the tool processes one deployment at a time
+- if one deployment fails, execution stops immediately
+- failure output must clearly identify the deployment name and the phase where
+  execution stopped
+- every deployment owns one dedicated Hosted Application
+- every deployment owns one Hosted Deployment associated with its own Hosted
+  Application
+- the relationship between deployments and Hosted Applications is one-to-one
+
+The tool must not treat one Hosted Application as a shared container for
+multiple deployments in this version. Sharing a Hosted Application across
+deployments would require a different lifecycle and rollback model and is out
+of scope for this design version.
+
 ## 3. OCI Resources Involved
 
 The design mainly revolves around two OCI Enterprise AI resources:
@@ -78,6 +104,27 @@ The following table clarifies the expected mapping. Items marked as `TBD` must b
 | Work request and diagnostics | Yes | Yes | Both operations can generate diagnostic information |
 
 This table does not replace the OCI CLI documentation. It is a design guide for deciding where fields should live in the YAML file and which parts the script should validate.
+
+For an Enterprise Solution with `N` deployments, the expected OCI resource
+shape is:
+
+```text
+Enterprise Solution
+  region: one shared OCI region
+  compartment: one shared OCI compartment
+
+  deployment[0]
+    Hosted Application: dedicated to deployment[0]
+    Hosted Deployment: attached to deployment[0] Hosted Application
+
+  deployment[1]
+    Hosted Application: dedicated to deployment[1]
+    Hosted Deployment: attached to deployment[1] Hosted Application
+
+  ...
+```
+
+This produces `N` Hosted Applications and `N` Hosted Deployments.
 
 ## 4. Proposed Architecture
 
@@ -168,7 +215,29 @@ The `dry-run` mode should show:
 
 The `dry-run` mode is especially important for CI/CD, code review, and troubleshooting because it makes it possible to validate the deployment before modifying OCI resources.
 
-### 5.3 Docker Image Build
+### 5.3 Serial Deployment Execution
+
+When the YAML file contains multiple deployments, the tool must execute them in
+the order declared in the file.
+
+For each deployment, the complete flow is:
+
+```text
+render JSON -> build image -> push image -> create/reuse Hosted Application -> create Hosted Deployment
+```
+
+Only after a deployment completes successfully may the tool continue with the
+next deployment. If any step fails, the tool must stop and report:
+
+- Enterprise Solution name
+- deployment name
+- failed phase
+- underlying OCI CLI, Docker, validation, or rendering error
+- the last successful phase, when known
+
+The tool must not attempt to continue with later deployments after a failure.
+
+### 5.4 Docker Image Build
 
 The script builds the Docker image using information from the YAML file.
 
@@ -178,7 +247,7 @@ Logical example:
 docker build -f Dockerfile -t my-agent:abc1234 .
 ```
 
-### 5.4 Tagging the Image for OCIR
+### 5.5 Tagging the Image for OCIR
 
 The script builds the full OCIR image name.
 
@@ -197,7 +266,7 @@ The tag should be unique, for example:
 
 Using `latest` for real deployments should be avoided.
 
-### 5.5 Push to OCIR
+### 5.6 Push to OCIR
 
 The script pushes the image.
 
@@ -207,7 +276,7 @@ Example:
 docker push fra.ocir.io/<namespace>/<repository>/<image-name>:<tag>
 ```
 
-### 5.6 Hosted Application Creation or Reuse
+### 5.7 Hosted Application Creation or Reuse
 
 The script checks whether a Hosted Application with that name already exists.
 
@@ -221,7 +290,7 @@ If it does not exist:
 - create a new Hosted Application
 - apply runtime, security, networking, and environment-variable configuration according to the actual OCI CLI model
 
-### 5.7 Hosted Deployment Creation
+### 5.8 Hosted Deployment Creation
 
 The script creates a new Hosted Deployment associated with the Hosted Application.
 
@@ -238,7 +307,7 @@ Main data:
 - optional activation flag
 - optional scaling configuration, if expected at this level
 
-### 5.8 Waiting and Diagnostics
+### 5.9 Waiting and Diagnostics
 
 The script waits for the final state.
 
@@ -268,7 +337,90 @@ Reasons:
 - it is convenient for managing multiple environments, for example dev, test, and prod
 - it can be converted easily to JSON by the script
 
-Example `oci_ai_deploy.yaml` file:
+Single-deployment YAML files remain valid for simple use cases and backward
+compatibility. New multi-deployment files should use the Enterprise Solution
+shape.
+
+Example multi-deployment `oci_ai_deploy.yaml` file:
+
+```yaml
+enterprise_solution:
+  name: my-ai-solution
+  compartment_id: ocid1.compartment.oc1..example
+  region: eu-frankfurt-1
+  region_key: fra
+
+deployments:
+  - name: agent-api
+    container:
+      context: ./agent-api
+      dockerfile: Dockerfile
+      image_name: agent-api
+      repository: ai-agents
+      tag_strategy: git_sha
+      ocir_namespace: auto
+
+    hosted_application:
+      display_name: agent-api-app
+      description: Agent API Hosted Application
+      create_if_missing: true
+      update_if_exists: false
+      scaling:
+        min_instances: 1
+        max_instances: 2
+        metric: cpu
+      networking:
+        mode: public
+      security:
+        auth_type: IDCS_AUTH_CONFIG
+        issuer_url: https://issuer.example.com
+        audience: agent-api
+        scopes:
+          - agent-api/.default
+      environment:
+        variables:
+          LOG_LEVEL: INFO
+        secrets:
+          API_KEY:
+            source: vault
+            secret_ocid: ocid1.vaultsecret.oc1..example
+
+    hosted_deployment:
+      display_name: agent-api-deployment
+      create_new_version: true
+      activate: true
+      wait_for_state: SUCCEEDED
+
+  - name: mcp-server
+    container:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+      image_name: mcp-server
+      repository: ai-agents
+      tag_strategy: git_sha
+      ocir_namespace: auto
+
+    hosted_application:
+      display_name: mcp-server-app
+      description: MCP Server Hosted Application
+      create_if_missing: true
+      update_if_exists: false
+      networking:
+        mode: public
+      security:
+        auth_type: NO_AUTH
+      environment:
+        variables:
+          LOG_LEVEL: INFO
+
+    hosted_deployment:
+      display_name: mcp-server-deployment
+      create_new_version: true
+      activate: true
+      wait_for_state: SUCCEEDED
+```
+
+Legacy single-deployment example:
 
 ```yaml
 application:

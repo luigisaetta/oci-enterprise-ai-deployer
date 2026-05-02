@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-02
 License: MIT
 
 Description:
@@ -15,7 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from enterprise_ai_deployment.deployment_config import DeploymentConfig
+from enterprise_ai_deployment.deployment_config import (
+    DeploymentConfig,
+    DeploymentUnitConfig,
+)
 from enterprise_ai_deployment.ocir import ImageReference
 
 
@@ -36,26 +39,28 @@ def render_artifacts(
     config: DeploymentConfig,
     image_reference: ImageReference,
     output_dir: str | Path,
+    deployment: DeploymentUnitConfig | None = None,
 ) -> RenderedArtifacts:
     """Render all JSON artifacts needed by the first deployment flow."""
+    deployment_config = deployment or config.deployments[0]
     target_dir = Path(output_dir).expanduser()
     target_dir.mkdir(parents=True, exist_ok=True)
 
     scaling_path = _write_optional_json(
         target_dir / "hosted-application-scaling-config.json",
-        _render_scaling(config.hosted_application.scaling),
+        _render_scaling(deployment_config.hosted_application.scaling),
     )
     auth_path = _write_optional_json(
         target_dir / "hosted-application-inbound-auth-config.json",
-        _render_inbound_auth(config.hosted_application.security),
+        _render_inbound_auth(deployment_config.hosted_application.security),
     )
     networking_path = _write_optional_json(
         target_dir / "hosted-application-networking-config.json",
-        _render_networking(config.hosted_application.networking),
+        _render_networking(deployment_config.hosted_application.networking),
     )
     environment_path = _write_optional_json(
         target_dir / "hosted-application-environment-variables.json",
-        _render_environment(config.hosted_application.environment),
+        _render_environment(deployment_config.hosted_application.environment),
     )
     active_artifact_path = _write_json(
         target_dir / "hosted-deployment-active-artifact.json",
@@ -64,6 +69,7 @@ def render_artifacts(
 
     hosted_application_payload = _render_hosted_application_payload(
         config,
+        deployment_config,
         scaling_path,
         auth_path,
         networking_path,
@@ -71,6 +77,7 @@ def render_artifacts(
     )
     hosted_deployment_payload = _render_hosted_deployment_payload(
         config,
+        deployment_config,
         image_reference,
         active_artifact_path,
     )
@@ -92,6 +99,7 @@ def render_artifacts(
 
 def _render_hosted_application_payload(
     config: DeploymentConfig,
+    deployment: DeploymentUnitConfig,
     scaling_path: Path | None,
     auth_path: Path | None,
     networking_path: Path | None,
@@ -99,13 +107,13 @@ def _render_hosted_application_payload(
 ) -> dict[str, Any]:
     """Render a command-oriented Hosted Application payload summary."""
     payload: dict[str, Any] = {
-        "displayName": config.hosted_application.display_name,
+        "displayName": deployment.hosted_application.display_name,
         "compartmentId": config.application.compartment_id,
-        "createIfMissing": config.hosted_application.create_if_missing,
-        "updateIfExists": config.hosted_application.update_if_exists,
+        "createIfMissing": deployment.hosted_application.create_if_missing,
+        "updateIfExists": deployment.hosted_application.update_if_exists,
     }
-    if config.hosted_application.description:
-        payload["description"] = config.hosted_application.description
+    if deployment.hosted_application.description:
+        payload["description"] = deployment.hosted_application.description
     json_files = {
         "scalingConfig": scaling_path,
         "inboundAuthConfig": auth_path,
@@ -120,20 +128,21 @@ def _render_hosted_application_payload(
 
 def _render_hosted_deployment_payload(
     config: DeploymentConfig,
+    deployment: DeploymentUnitConfig,
     image_reference: ImageReference,
     active_artifact_path: Path,
 ) -> dict[str, Any]:
     """Render a command-oriented Hosted Deployment payload summary."""
     return {
-        "displayName": config.hosted_deployment.display_name,
+        "displayName": deployment.hosted_deployment.display_name,
         "compartmentId": config.application.compartment_id,
         "activeArtifact": str(active_artifact_path),
         "containerUri": image_reference.container_uri,
         "artifactTag": image_reference.tag,
         "imageUri": image_reference.image_uri,
-        "createNewVersion": config.hosted_deployment.create_new_version,
-        "activate": config.hosted_deployment.activate,
-        "waitForState": config.hosted_deployment.wait_for_state,
+        "createNewVersion": deployment.hosted_deployment.create_new_version,
+        "activate": deployment.hosted_deployment.activate,
+        "waitForState": deployment.hosted_deployment.wait_for_state,
     }
 
 

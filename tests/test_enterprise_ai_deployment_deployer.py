@@ -86,6 +86,28 @@ def test_load_deployment_config_requires_explicit_tag(tmp_path) -> None:
     )
 
 
+def test_load_enterprise_solution_config_reads_multiple_deployments(
+    tmp_path, monkeypatch
+) -> None:
+    """Enterprise Solution YAML supports multiple serial deployments."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "solution.yaml"
+    config_path.write_text(_valid_solution_yaml(tmp_path), encoding="utf-8")
+
+    config = load_deployment_config(config_path)
+
+    assert config.application.name == "demo-solution"
+    assert config.application.compartment_id == "ocid1.compartment.oc1..example"
+    assert [deployment.name for deployment in config.deployments] == [
+        "agent-api",
+        "mcp-server",
+    ]
+    assert config.deployments[0].hosted_application.display_name == "agent-api"
+    assert config.deployments[1].hosted_application.display_name == "mcp-server"
+    validate_deployment_config(config)
+
+
 def test_render_artifacts_do_not_write_local_secret_values(
     tmp_path, monkeypatch
 ) -> None:
@@ -144,6 +166,35 @@ def test_render_artifacts_do_not_write_local_secret_values(
     assert (
         deployment_payload["imageUri"] == "fra.ocir.io/ns/ai-agents/demo-agent:abc1234"
     )
+
+
+def test_render_enterprise_solution_writes_per_deployment_artifacts(
+    tmp_path, monkeypatch
+) -> None:
+    """Multi-deployment render writes artifacts under one directory per deployment."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "solution.yaml"
+    config_path.write_text(_valid_solution_yaml(tmp_path), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "--dry-run",
+            "render",
+        ]
+    )
+
+    assert exit_code == 0
+    assert (
+        tmp_path / "generated" / "agent-api" / "create-hosted-application.json"
+    ).exists()
+    assert (
+        tmp_path / "generated" / "mcp-server" / "create-hosted-deployment.json"
+    ).exists()
 
 
 def test_build_image_reference_uses_explicit_tag(tmp_path, monkeypatch) -> None:
@@ -495,6 +546,55 @@ def test_deploy_creates_application_then_deployment(tmp_path, monkeypatch) -> No
     assert "ocid1.hostedapplication.oc1..app" in calls[5]
 
 
+def test_enterprise_solution_deploy_stops_on_first_failed_deployment(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Serial Enterprise Solution deploy stops and reports the failed deployment."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "solution.yaml"
+    config_path.write_text(_valid_solution_yaml(tmp_path), encoding="utf-8")
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[-3:] == ["os", "ns", "get"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": "mytenancy"}),
+                stderr="",
+            )
+        if command[:2] == ["docker", "build"]:
+            return subprocess.CompletedProcess(command, 0, stdout="built\n", stderr="")
+        if command[:2] == ["docker", "push"] and "agent-api:20260429" in command[-1]:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="denied")
+        raise AssertionError(f"unexpected command after failure: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "deploy",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "deployment 'agent-api'" in captured.out
+    assert "push-container failed" in captured.out
+    assert "mcp-server" in captured.out
+    assert not any(
+        command[:2] == ["docker", "build"] and "mcp-server:20260429" in command
+        for command in calls
+    )
+
+
 def test_create_application_reuses_existing_display_name(
     tmp_path, monkeypatch, capsys
 ) -> None:
@@ -775,4 +875,83 @@ hosted_deployment:
   create_new_version: true
   activate: true
   wait_for_state: SUCCEEDED
+"""
+
+
+def _valid_solution_yaml(tmp_path) -> str:
+    """Return a minimal valid Enterprise Solution YAML."""
+    return f"""
+enterprise_solution:
+  name: demo-solution
+  compartment_id: ocid1.compartment.oc1..example
+  region: eu-frankfurt-1
+  region_key: fra
+
+deployments:
+  - name: agent-api
+    container:
+      context: {tmp_path}
+      dockerfile: Dockerfile
+      image_name: agent-api
+      repository: ai-agents
+      tag_strategy: explicit
+      tag: "20260429"
+      ocir_namespace: auto
+    hosted_application:
+      display_name: agent-api
+      description: Agent API
+      create_if_missing: true
+      update_if_exists: false
+      scaling:
+        min_instances: 1
+        max_instances: 2
+        metric: cpu
+        threshold: 70
+      networking:
+        mode: public
+      security:
+        auth_type: IDCS_AUTH_CONFIG
+        issuer_url: https://issuer.example.com
+        audience: agent-api
+        scopes:
+          - agent-api/.default
+      environment:
+        variables:
+          LOG_LEVEL: INFO
+        secrets:
+          API_KEY:
+            source: local_env
+            env_name: MY_AGENT_API_KEY
+    hosted_deployment:
+      display_name: agent-api-deployment
+      create_new_version: true
+      activate: true
+      wait_for_state: SUCCEEDED
+
+  - name: mcp-server
+    container:
+      context: {tmp_path}
+      dockerfile: Dockerfile
+      image_name: mcp-server
+      repository: ai-agents
+      tag_strategy: explicit
+      tag: "20260429"
+      ocir_namespace: auto
+    hosted_application:
+      display_name: mcp-server
+      description: MCP Server
+      create_if_missing: true
+      update_if_exists: false
+      networking:
+        mode: public
+      security:
+        auth_type: NO_AUTH
+      environment:
+        variables:
+          LOG_LEVEL: INFO
+    hosted_deployment:
+      display_name: mcp-server-deployment
+      create_new_version: true
+      activate: true
+      wait_for_state: SUCCEEDED
 """

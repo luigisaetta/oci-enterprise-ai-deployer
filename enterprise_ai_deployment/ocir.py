@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-02
 License: MIT
 
 Description:
@@ -14,7 +14,10 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from enterprise_ai_deployment.deployment_config import DeploymentConfig
+from enterprise_ai_deployment.deployment_config import (
+    DeploymentConfig,
+    DeploymentUnitConfig,
+)
 
 
 @dataclass(frozen=True)
@@ -31,27 +34,34 @@ class ImageReference:
 
 
 def build_image_reference(
-    config: DeploymentConfig, namespace: str | None = None
+    config: DeploymentConfig,
+    namespace: str | None = None,
+    deployment: DeploymentUnitConfig | None = None,
 ) -> ImageReference:
     """Build the OCIR image URI and tag from deployment configuration."""
-    resolved_namespace = namespace or config.container.ocir_namespace
+    deployment_config = deployment or config.deployments[0]
+    container = deployment_config.container
+    resolved_namespace = namespace or container.ocir_namespace
     if resolved_namespace == "auto":
         resolved_namespace = "<resolved-ocir-namespace>"
-    tag = resolve_image_tag(config)
+    tag = resolve_image_tag(config, deployment=deployment_config)
     container_uri = (
         f"{config.application.region_key}.ocir.io/"
-        f"{resolved_namespace}/{config.container.repository}/{config.container.image_name}"
+        f"{resolved_namespace}/{container.repository}/{container.image_name}"
     )
     return ImageReference(container_uri=container_uri, tag=tag)
 
 
-def resolve_image_tag(config: DeploymentConfig) -> str:
+def resolve_image_tag(
+    config: DeploymentConfig, deployment: DeploymentUnitConfig | None = None
+) -> str:
     """Resolve the Docker image tag strategy."""
-    if config.container.tag:
-        return config.container.tag
-    if config.container.tag_strategy == "timestamp":
+    container = (deployment or config.deployments[0]).container
+    if container.tag:
+        return container.tag
+    if container.tag_strategy == "timestamp":
         return datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    if config.container.tag_strategy == "git_sha":
+    if container.tag_strategy == "git_sha":
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             check=False,
@@ -61,4 +71,4 @@ def resolve_image_tag(config: DeploymentConfig) -> str:
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
         return "unknown-git-sha"
-    return config.container.tag_strategy
+    return container.tag_strategy

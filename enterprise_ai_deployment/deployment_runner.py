@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-02
 License: MIT
 
 Description:
@@ -29,6 +29,7 @@ from enterprise_ai_deployment.config import OciCliConfig
 from enterprise_ai_deployment.deployment_config import (
     DeploymentConfig,
     DeploymentConfigError,
+    DeploymentUnitConfig,
     load_deployment_config,
 )
 from enterprise_ai_deployment.deployment_renderer import (
@@ -47,6 +48,19 @@ class DeploymentContext:
     """Resolved deployment inputs shared by command handlers."""
 
     config: DeploymentConfig
+    deployments: tuple["DeploymentExecutionContext", ...]
+
+    @property
+    def first(self) -> "DeploymentExecutionContext":
+        """Return the first deployment for legacy single-deployment commands."""
+        return self.deployments[0]
+
+
+@dataclass(frozen=True)
+class DeploymentExecutionContext:
+    """Resolved inputs for one serial deployment."""
+
+    deployment: DeploymentUnitConfig
     image_reference: ImageReference
     artifacts: RenderedArtifacts | None = None
 
@@ -107,13 +121,16 @@ def run_command(args: argparse.Namespace) -> int:
     if args.command == "validate":
         print("Configuration is valid.")
     elif args.command == "render":
-        _print_rendered(context.artifacts)
+        _print_all_rendered(context)
     elif args.command == "build":
-        build_container_image(context, args)
+        for deployment_context in context.deployments:
+            build_container_image(context, args, deployment_context)
     elif args.command == "push":
-        push_container_image(context, args)
+        for deployment_context in context.deployments:
+            push_container_image(context, args, deployment_context)
     elif args.command == "create-application":
-        create_hosted_application(context, args)
+        for deployment_context in context.deployments:
+            create_hosted_application(context, args, deployment_context)
     elif args.command == "create-deployment":
         _run_create_deployment_command(context, args)
     elif args.command == "deploy":
@@ -127,36 +144,74 @@ def _run_create_deployment_command(
     context: DeploymentContext, args: argparse.Namespace
 ) -> None:
     """Run standalone Hosted Deployment creation."""
+    if len(context.deployments) > 1:
+        raise RuntimeError(
+            "create-deployment with --hosted-application-id is only supported "
+            "for single-deployment YAML. Use deploy for Enterprise Solutions."
+        )
     hosted_application_id = args.hosted_application_id
     if not hosted_application_id:
         raise RuntimeError(
             "create-deployment requires --hosted-application-id. "
             "Use deploy to create the application and deployment together."
         )
-    create_hosted_deployment(context, args, hosted_application_id)
+    create_hosted_deployment(context, args, hosted_application_id=hosted_application_id)
 
 
 def _run_deploy_command(context: DeploymentContext, args: argparse.Namespace) -> None:
     """Run the complete deploy flow."""
     _print_plan(context)
-    build_container_image(context, args)
-    push_container_image(context, args)
+    for deployment_context in context.deployments:
+        _run_single_deployment(context, deployment_context, args)
     if args.dry_run:
-        create_hosted_application(context, args)
+        print("Dry run: no OCI commands were executed.")
+
+
+def _run_single_deployment(
+    context: DeploymentContext,
+    deployment_context: DeploymentExecutionContext,
+    args: argparse.Namespace,
+) -> None:
+    """Run one deployment and stop the whole solution on the first failure."""
+    print()
+    print(f"Starting deployment: {deployment_context.deployment.name}")
+    try:
+        build_container_image(context, args, deployment_context)
+        push_container_image(context, args, deployment_context)
+        if args.dry_run:
+            create_hosted_application(context, args, deployment_context)
+            create_hosted_deployment(
+                context,
+                args,
+                hosted_application_id="<created-hosted-application-id>",
+                deployment_context=deployment_context,
+            )
+            return
+        hosted_application_id = create_hosted_application(
+            context, args, deployment_context
+        )
         create_hosted_deployment(
             context,
             args,
-            hosted_application_id="<created-hosted-application-id>",
+            hosted_application_id,
+            deployment_context=deployment_context,
         )
-        print("Dry run: no OCI commands were executed.")
-        return
-    hosted_application_id = create_hosted_application(context, args)
-    create_hosted_deployment(context, args, hosted_application_id)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "Deployment failed for Enterprise Solution "
+            f"{context.config.application.name!r}, deployment "
+            f"{deployment_context.deployment.name!r}: {exc}"
+        ) from exc
 
 
-def build_container_image(context: DeploymentContext, args: argparse.Namespace) -> None:
+def build_container_image(
+    context: DeploymentContext,
+    args: argparse.Namespace,
+    deployment_context: DeploymentExecutionContext | None = None,
+) -> None:
     """Build the Docker image that will be used by the Hosted Deployment."""
-    command = build_docker_build_command(context)
+    deployment_context = deployment_context or context.first
+    command = build_docker_build_command(context, deployment_context)
     _print_oci_command("Build Container Image", command)
     if args.dry_run:
         print("Dry run: command not executed.")
@@ -168,24 +223,37 @@ def build_container_image(context: DeploymentContext, args: argparse.Namespace) 
     )
 
 
-def build_docker_build_command(context: DeploymentContext) -> list[str]:
+def build_docker_build_command(
+    context: DeploymentContext,
+    deployment_context: DeploymentExecutionContext | None = None,
+) -> list[str]:
     """Build the Docker image build command from deployment configuration."""
+    deployment_context = deployment_context or context.first
     return [
         "docker",
         "build",
         "--platform",
         "linux/amd64",
         "-f",
-        str(_resolve_dockerfile_path(context.config)),
+        str(_resolve_dockerfile_path(context.config, deployment_context.deployment)),
         "-t",
-        context.image_reference.image_uri,
-        str(_resolve_container_context_path(context.config)),
+        deployment_context.image_reference.image_uri,
+        str(
+            _resolve_container_context_path(
+                context.config, deployment_context.deployment
+            )
+        ),
     ]
 
 
-def push_container_image(context: DeploymentContext, args: argparse.Namespace) -> None:
+def push_container_image(
+    context: DeploymentContext,
+    args: argparse.Namespace,
+    deployment_context: DeploymentExecutionContext | None = None,
+) -> None:
     """Push the Docker image to OCIR."""
-    command = build_docker_push_command(context)
+    deployment_context = deployment_context or context.first
+    command = build_docker_push_command(deployment_context)
     _print_oci_command("Push Container Image", command)
     if args.dry_run:
         print("Dry run: command not executed.")
@@ -197,41 +265,45 @@ def push_container_image(context: DeploymentContext, args: argparse.Namespace) -
     )
 
 
-def build_docker_push_command(context: DeploymentContext) -> list[str]:
+def build_docker_push_command(context: DeploymentExecutionContext) -> list[str]:
     """Build the Docker image push command."""
     return ["docker", "push", context.image_reference.image_uri]
 
 
 def create_hosted_application(
-    context: DeploymentContext, args: argparse.Namespace
+    context: DeploymentContext,
+    args: argparse.Namespace,
+    deployment_context: DeploymentExecutionContext | None = None,
 ) -> str:
     """Create the Hosted Application through OCI CLI, or print it in dry-run mode."""
-    if context.artifacts is None:
+    deployment_context = deployment_context or context.first
+    if deployment_context.artifacts is None:
         raise RuntimeError(
             "Artifacts must be rendered before creating a Hosted Application."
         )
     config = context.config
+    deployment = deployment_context.deployment
     if not args.dry_run:
         existing_hosted_application_id = _find_hosted_application_id_by_name(
             OciCliConfig(region=config.application.region),
             config.application.compartment_id,
-            config.hosted_application.display_name,
+            deployment.hosted_application.display_name,
         )
         if existing_hosted_application_id:
             print(
                 "Using existing Hosted Application "
-                f"{config.hosted_application.display_name!r}: "
+                f"{deployment.hosted_application.display_name!r}: "
                 f"{existing_hosted_application_id}"
             )
             return existing_hosted_application_id
 
-    artifacts = context.artifacts
+    artifacts = deployment_context.artifacts
     command = build_create_hosted_application_command(
         OciCliConfig(region=config.application.region),
         HostedApplicationCreateRequest(
-            display_name=config.hosted_application.display_name,
+            display_name=deployment.hosted_application.display_name,
             compartment_id=config.application.compartment_id,
-            description=config.hosted_application.description,
+            description=deployment.hosted_application.description,
             json_options=HostedApplicationJsonOptions(
                 scaling_config=(
                     str(artifacts.scaling_config) if artifacts.scaling_config else None
@@ -252,7 +324,7 @@ def create_hosted_application(
                     else None
                 ),
             ),
-            wait=config.hosted_deployment.wait_for_state is not None,
+            wait=deployment.hosted_deployment.wait_for_state is not None,
         ),
     )
     _print_oci_command("Create Hosted Application", command)
@@ -274,18 +346,21 @@ def create_hosted_deployment(
     context: DeploymentContext,
     args: argparse.Namespace,
     hosted_application_id: str,
+    deployment_context: DeploymentExecutionContext | None = None,
 ) -> str:
     """Create the Hosted Deployment through OCI CLI, or print it in dry-run mode."""
     config = context.config
+    deployment_context = deployment_context or context.first
+    deployment = deployment_context.deployment
     command = build_create_hosted_deployment_command(
         OciCliConfig(region=config.application.region),
         HostedDeploymentCreateRequest(
             hosted_application_id=hosted_application_id,
-            display_name=config.hosted_deployment.display_name,
+            display_name=deployment.hosted_deployment.display_name,
             compartment_id=config.application.compartment_id,
-            container_uri=context.image_reference.container_uri,
-            artifact_tag=context.image_reference.tag,
-            wait=config.hosted_deployment.wait_for_state is not None,
+            container_uri=deployment_context.image_reference.container_uri,
+            artifact_tag=deployment_context.image_reference.tag,
+            wait=deployment.hosted_deployment.wait_for_state is not None,
         ),
     )
     _print_oci_command("Create Hosted Deployment", command)
@@ -304,16 +379,65 @@ def _prepare_context(args: argparse.Namespace, render: bool) -> DeploymentContex
     namespace = (
         _resolve_ocir_namespace(OciCliConfig(region=config.application.region))
         if _needs_runtime_image_reference(args)
-        and config.container.ocir_namespace == "auto"
+        and any(
+            deployment.container.ocir_namespace == "auto"
+            for deployment in config.deployments
+        )
         else None
     )
-    image_reference = build_image_reference(config, namespace=namespace)
+    deployments = tuple(
+        _prepare_deployment_context(config, deployment, namespace, args, render)
+        for deployment in config.deployments
+    )
+    return DeploymentContext(config=config, deployments=deployments)
+
+
+def _prepare_deployment_context(
+    config: DeploymentConfig,
+    deployment: DeploymentUnitConfig,
+    namespace: str | None,
+    args: argparse.Namespace,
+    render: bool,
+) -> DeploymentExecutionContext:
+    """Resolve image and optionally render artifacts for one deployment."""
+    image_reference = build_image_reference(
+        config, namespace=namespace, deployment=deployment
+    )
     artifacts = (
-        render_artifacts(config, image_reference, args.output_dir) if render else None
+        render_artifacts(
+            config,
+            image_reference,
+            _deployment_output_dir(args.output_dir, config, deployment),
+            deployment=deployment,
+        )
+        if render
+        else None
     )
-    return DeploymentContext(
-        config=config, image_reference=image_reference, artifacts=artifacts
+    return DeploymentExecutionContext(
+        deployment=deployment,
+        image_reference=image_reference,
+        artifacts=artifacts,
     )
+
+
+def _deployment_output_dir(
+    output_dir: str | Path,
+    config: DeploymentConfig,
+    deployment: DeploymentUnitConfig,
+) -> Path:
+    """Return the artifact directory for one deployment."""
+    base_dir = Path(output_dir).expanduser()
+    if len(config.deployments) == 1:
+        return base_dir
+    return base_dir / deployment.name
+
+
+def _print_all_rendered(context: DeploymentContext) -> None:
+    """Print generated artifact paths for all deployments."""
+    for deployment_context in context.deployments:
+        if len(context.deployments) > 1:
+            print(f"Deployment {deployment_context.deployment.name}:")
+        _print_rendered(deployment_context.artifacts)
 
 
 def _print_rendered(artifacts: RenderedArtifacts | None) -> None:
@@ -328,10 +452,16 @@ def _print_rendered(artifacts: RenderedArtifacts | None) -> None:
 def _print_plan(context: DeploymentContext) -> None:
     """Print a concise deployment plan."""
     print("Deployment plan:")
-    print(f"- application: {context.config.hosted_application.display_name}")
+    print(f"- enterprise solution: {context.config.application.name}")
     print(f"- compartment: {context.config.application.compartment_id}")
-    print(f"- image: {context.image_reference.image_uri}")
-    _print_rendered(context.artifacts)
+    print(f"- region: {context.config.application.region}")
+    print(f"- deployments: {len(context.deployments)}")
+    for deployment_context in context.deployments:
+        print(
+            f"- deployment: {deployment_context.deployment.name} "
+            f"({deployment_context.image_reference.image_uri})"
+        )
+        _print_rendered(deployment_context.artifacts)
 
 
 def _print_oci_command(title: str, command: list[str]) -> None:
@@ -451,20 +581,30 @@ def _extract_namespace(stdout: str) -> str | None:
     return _first_string(payload, "namespace", "name", "value")
 
 
-def _resolve_container_context_path(config: DeploymentConfig) -> Path:
+def _resolve_container_context_path(
+    config: DeploymentConfig,
+    deployment: DeploymentUnitConfig | None = None,
+) -> Path:
     """Resolve the Docker build context relative to the YAML location."""
-    context_path = Path(config.container.context).expanduser()
+    deployment = deployment or config.deployments[0]
+    context_path = Path(deployment.container.context).expanduser()
     if context_path.is_absolute():
         return context_path
     return (config.source_path.parent / context_path).resolve()
 
 
-def _resolve_dockerfile_path(config: DeploymentConfig) -> Path:
+def _resolve_dockerfile_path(
+    config: DeploymentConfig,
+    deployment: DeploymentUnitConfig | None = None,
+) -> Path:
     """Resolve the Dockerfile path relative to the build context."""
-    dockerfile_path = Path(config.container.dockerfile).expanduser()
+    deployment = deployment or config.deployments[0]
+    dockerfile_path = Path(deployment.container.dockerfile).expanduser()
     if dockerfile_path.is_absolute():
         return dockerfile_path
-    return (_resolve_container_context_path(config) / dockerfile_path).resolve()
+    return (
+        _resolve_container_context_path(config, deployment) / dockerfile_path
+    ).resolve()
 
 
 def _find_hosted_application_id_by_name(

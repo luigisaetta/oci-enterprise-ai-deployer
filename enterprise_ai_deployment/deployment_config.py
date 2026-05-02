@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-02
 License: MIT
 
 Description:
@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from enterprise_ai_deployment.deployment_schema import (
     DeploymentSchema,
     DeploymentSchemaError,
+    DeploymentItemSchema,
     validate_deployment_schema,
 )
 
@@ -76,14 +77,37 @@ class HostedDeploymentConfig:
 
 
 @dataclass(frozen=True)
-class DeploymentConfig:
-    """Complete deployment configuration read from YAML."""
+class DeploymentUnitConfig:
+    """One serial deployment inside an Enterprise Solution."""
 
-    application: ApplicationConfig
+    name: str
     container: ContainerConfig
     hosted_application: HostedApplicationConfig
     hosted_deployment: HostedDeploymentConfig
+
+
+@dataclass(frozen=True)
+class DeploymentConfig:
+    """Complete Enterprise Solution configuration read from YAML."""
+
+    application: ApplicationConfig
+    deployments: tuple[DeploymentUnitConfig, ...]
     source_path: Path
+
+    @property
+    def container(self) -> ContainerConfig:
+        """Return the first deployment container for legacy callers."""
+        return self.deployments[0].container
+
+    @property
+    def hosted_application(self) -> HostedApplicationConfig:
+        """Return the first Hosted Application for legacy callers."""
+        return self.deployments[0].hosted_application
+
+    @property
+    def hosted_deployment(self) -> HostedDeploymentConfig:
+        """Return the first Hosted Deployment for legacy callers."""
+        return self.deployments[0].hosted_deployment
 
 
 def load_deployment_config(
@@ -122,10 +146,27 @@ def _parse_deployment_config(
     schema: DeploymentSchema, source_path: Path
 ) -> DeploymentConfig:
     """Convert a raw YAML mapping into typed configuration objects."""
-    application = schema.application
-    container = schema.container
-    hosted_application = schema.hosted_application
-    hosted_deployment = schema.hosted_deployment
+    if schema.enterprise_solution is not None and schema.deployments is not None:
+        application = schema.enterprise_solution
+        deployment_items = schema.deployments
+    else:
+        application = schema.application
+        if application is None:
+            raise DeploymentConfigError("Deployment YAML is missing application.")
+        if (
+            schema.container is None
+            or schema.hosted_application is None
+            or schema.hosted_deployment is None
+        ):
+            raise DeploymentConfigError("Deployment YAML is incomplete.")
+        deployment_items = [
+            DeploymentItemSchema(
+                name=application.name,
+                container=schema.container,
+                hosted_application=schema.hosted_application,
+                hosted_deployment=schema.hosted_deployment,
+            )
+        ]
 
     return DeploymentConfig(
         application=ApplicationConfig(
@@ -134,6 +175,20 @@ def _parse_deployment_config(
             region=application.region,
             region_key=application.region_key,
         ),
+        deployments=tuple(
+            _parse_deployment_unit(deployment) for deployment in deployment_items
+        ),
+        source_path=source_path,
+    )
+
+
+def _parse_deployment_unit(schema: DeploymentItemSchema) -> DeploymentUnitConfig:
+    """Convert one schema deployment item into a typed configuration object."""
+    container = schema.container
+    hosted_application = schema.hosted_application
+    hosted_deployment = schema.hosted_deployment
+    return DeploymentUnitConfig(
+        name=schema.name,
         container=ContainerConfig(
             context=container.context,
             dockerfile=container.dockerfile,
@@ -159,5 +214,4 @@ def _parse_deployment_config(
             activate=hosted_deployment.activate,
             wait_for_state=hosted_deployment.wait_for_state,
         ),
-        source_path=source_path,
     )

@@ -2,7 +2,7 @@
 
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-02
 
 ## 1. Document Purpose
 
@@ -29,6 +29,10 @@ YAML -> Python -> generated JSON -> OCI CLI -> OCI Enterprise AI
 Version 1 must support:
 
 - reading and validating the YAML file
+- reading a single-deployment legacy YAML file
+- reading an Enterprise Solution YAML file with one or more deployments
+- enforcing one region and one compartment for the whole Enterprise Solution
+- executing Enterprise Solution deployments serially
 - generating intermediate JSON files for OCI CLI
 - `dry run` mode
 - building the Docker image
@@ -39,6 +43,17 @@ Version 1 must support:
 - waiting for the final state, where supported by the OCI CLI
 - readable error handling
 - automated tests for parts that do not depend on real OCI resources
+
+For Enterprise Solution YAML files, every deployment must have its own dedicated
+Hosted Application and Hosted Deployment. The relationship is one-to-one:
+
+```text
+deployment[0] -> Hosted Application[0] -> Hosted Deployment[0]
+deployment[1] -> Hosted Application[1] -> Hosted Deployment[1]
+```
+
+The implementation must not create multiple Hosted Deployments under one shared
+Hosted Application in this version.
 
 ## 3. Non-Goals for Version 1
 
@@ -52,6 +67,8 @@ Version 1 must not implement:
 - automatic rollback based on application health checks
 - clear-text storage of secrets
 - automatic inference of missing IDCS auth configuration
+- parallel deployment execution
+- shared Hosted Applications for multiple deployment items
 
 IAM policies and working OCI permissions are external prerequisites. They must be prepared by OCI admins before using the tool.
 
@@ -136,6 +153,11 @@ python oci_ai_deploy.py --config examples/agent_dev.yaml deploy
 python oci_ai_deploy.py --config examples/agent_dev.yaml rollback --to-tag abc1234
 ```
 
+When the YAML file uses the Enterprise Solution shape, `render`, `build`,
+`push`, `create-application`, and `deploy` apply to all deployment items in the
+declared order. `deploy` must stop immediately on the first deployment failure
+and report the failed deployment name and phase.
+
 Required global parameters:
 
 ```text
@@ -165,7 +187,7 @@ python oci_ai_deploy.py --config examples/agent_dev.yaml deploy --dry-run
 
 ## 7. YAML Format Supported in Version 1
 
-Version 1 must support at least this structure:
+Version 1 must support the legacy single-deployment structure:
 
 ```yaml
 application:
@@ -221,6 +243,86 @@ hosted_deployment:
   activate: true
   wait_for_state: SUCCEEDED
 ```
+
+Version 1 must also support this Enterprise Solution structure:
+
+```yaml
+enterprise_solution:
+  name: my-ai-solution
+  compartment_id: ocid1.compartment.oc1..example
+  region: eu-frankfurt-1
+  region_key: fra
+
+deployments:
+  - name: agent-api
+    container:
+      context: ./agent-api
+      dockerfile: Dockerfile
+      image_name: agent-api
+      repository: ai-agents
+      tag_strategy: git_sha
+      ocir_namespace: auto
+
+    hosted_application:
+      display_name: agent-api-app
+      description: Agent API deployed through OCI Enterprise AI
+      create_if_missing: true
+      update_if_exists: false
+      networking:
+        mode: public
+      security:
+        auth_type: IDCS_AUTH_CONFIG
+        issuer_url: https://issuer.example.com
+        audience: agent-api
+        scopes:
+          - agent-api/.default
+      environment:
+        variables:
+          LOG_LEVEL: INFO
+
+    hosted_deployment:
+      display_name: agent-api-deployment
+      create_new_version: true
+      activate: true
+      wait_for_state: SUCCEEDED
+
+  - name: mcp-server
+    container:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+      image_name: mcp-server
+      repository: ai-agents
+      tag_strategy: git_sha
+      ocir_namespace: auto
+
+    hosted_application:
+      display_name: mcp-server-app
+      create_if_missing: true
+      update_if_exists: false
+      networking:
+        mode: public
+      security:
+        auth_type: NO_AUTH
+      environment:
+        variables:
+          LOG_LEVEL: INFO
+
+    hosted_deployment:
+      display_name: mcp-server-deployment
+      create_new_version: true
+      activate: true
+      wait_for_state: SUCCEEDED
+```
+
+Enterprise Solution constraints:
+
+- `enterprise_solution.region` applies to every deployment
+- `enterprise_solution.region_key` applies to every deployment
+- `enterprise_solution.compartment_id` applies to every deployment
+- every item in `deployments` must have a unique `name`
+- every item in `deployments` must have a unique Hosted Application display name
+- generated artifacts for multiple deployments must be written under
+  deployment-specific output directories
 
 ## 8. Secrets Handling
 

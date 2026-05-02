@@ -34,7 +34,7 @@ from enterprise_ai_deployment.deployment_validation import (
     validate_deployment_config,
 )
 
-RunAction = Literal["validate", "render", "dry-run", "deploy"]
+RunAction = Literal["validate", "render", "dry-run", "build", "deploy"]
 
 
 class RunRequest(BaseModel):
@@ -207,6 +207,19 @@ async def _fake_run_event_stream(run: StoredRun):
             start_message="Starting real CLI render.",
             success_message="CLI render completed successfully.",
             failure_message="CLI render failed",
+            dry_run=False,
+        ):
+            yield event
+        return
+
+    if run.action == "build":
+        async for event in _stream_cli_command(
+            run,
+            cli_command="build",
+            step="cli-build",
+            start_message="Starting real CLI container build.",
+            success_message="CLI container build completed successfully.",
+            failure_message="CLI container build failed",
             dry_run=False,
         ):
             yield event

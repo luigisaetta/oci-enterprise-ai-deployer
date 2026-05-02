@@ -29,7 +29,7 @@ type UploadedFile = {
   content: string;
 };
 
-type ActionKey = "validate" | "render" | "dry-run" | "deploy";
+type ActionKey = "validate" | "render" | "dry-run" | "build" | "deploy";
 
 type RunEvent = {
   id: number;
@@ -42,6 +42,7 @@ const ACTIONS: Record<ActionKey, string> = {
   validate: "Validate configuration",
   render: "Render JSON artifacts",
   "dry-run": "Review dry run",
+  build: "Build container image",
   deploy: "Deploy",
 };
 

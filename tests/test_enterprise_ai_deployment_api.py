@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from enterprise_ai_deployment import api
 from enterprise_ai_deployment.api import RUNS, create_app
 
 
@@ -105,6 +106,50 @@ def test_render_run_streams_real_cli_render() -> None:
     assert "Generated OCI CLI JSON artifacts:" in body
     assert "generated/web-test/create-hosted-application.json" in body
     assert "CLI render completed successfully." in body
+
+
+def test_build_run_uses_real_cli_build_streamer(monkeypatch) -> None:
+    """Build action routes to the real CLI build streamer without pushing."""
+    RUNS.clear()
+    seen = {}
+
+    async def fake_stream_cli_command(run, **kwargs):
+        seen.update(kwargs)
+        yield api._to_sse(
+            "done",
+            {
+                "state": "succeeded",
+                "step": "complete",
+                "message": "fake build complete",
+            },
+        )
+
+    monkeypatch.setattr(api, "_stream_cli_command", fake_stream_cli_command)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/actions/preview",
+        json={
+            "yaml": _valid_web_yaml(),
+            "env": "LOG_LEVEL=INFO\n",
+            "action": "build",
+            "profile": "DEFAULT",
+            "region": "eu-frankfurt-1",
+            "output_dir": "generated/web-test",
+        },
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+
+    with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
+        body = "".join(stream.iter_text())
+
+    assert "fake build complete" in body
+    assert seen["cli_command"] == "build"
+    assert seen["step"] == "cli-build"
+    assert seen["dry_run"] is False
+    assert "push" not in seen["cli_command"]
 
 
 def test_unknown_run_stream_returns_404() -> None:

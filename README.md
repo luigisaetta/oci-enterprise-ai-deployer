@@ -20,6 +20,8 @@ payloads, build and publish a Docker image to OCIR, reuse an existing Hosted
 Application when possible, and create a Hosted Deployment that points to the
 published image.
 
+Feature evolution is tracked in [FEATURE_HISTORY.md](FEATURE_HISTORY.md).
+
 ## What It Does
 
 - Loads deployment settings from YAML.
@@ -154,8 +156,10 @@ configuration validation with the same Python rules used by the CLI, including
 a strict Pydantic schema that rejects unknown YAML fields. The `Review dry run`
 action invokes the real Python CLI with `--dry-run deploy` and streams its
 output back to the UI. The `Render JSON artifacts` action also invokes the real
-Python CLI and streams the generated artifact paths. Other downstream actions
-still stream preview events and do not call Docker or OCI yet.
+Python CLI and streams the generated artifact paths. The `Build container image`
+action invokes the real Python CLI `build` command and stops before any OCIR
+push. The full `Deploy` action still streams preview events and does not call
+Docker or OCI yet.
 
 Start the FastAPI backend from the repository root:
 
