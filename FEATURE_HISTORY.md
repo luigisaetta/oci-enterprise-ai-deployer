@@ -1,9 +1,9 @@
 # OCI Enterprise AI Deployer Feature History
 
-Author: L. Saetta
-Version: 0.1.0
-Last modified: 2026-05-02
-License: MIT
+- **Author:** L. Saetta
+- **Version:** 0.1.0
+- **Last modified:** 2026-05-02
+- **License:** MIT
 
 This document tracks the functional story of the deployer as features are added
 over time. It is intentionally more narrative than a release changelog: the goal

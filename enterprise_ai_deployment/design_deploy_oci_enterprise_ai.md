@@ -1,8 +1,8 @@
 # Design for Automated Deployment of AI Components on OCI Enterprise AI
 
-Author: L. Saetta
-Version: 1.2
-Last modified: 2026-05-02
+- **Author:** L. Saetta
+- **Version:** 1.2
+- **Last modified:** 2026-05-02
 
 Note: in this specification, points that still need to be defined are marked as: `TBD`.
 

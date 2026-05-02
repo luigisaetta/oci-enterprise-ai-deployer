@@ -1,8 +1,8 @@
 # Implementation Spec for Codex
 
-Author: L. Saetta
-Version: 0.1.0
-Last modified: 2026-05-02
+- **Author:** L. Saetta
+- **Version:** 0.1.0
+- **Last modified:** 2026-05-02
 
 ## 1. Document Purpose
 

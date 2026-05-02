@@ -1,9 +1,9 @@
 # Package Notes
 
-Author: L. Saetta
-Version: 0.1.0
-Last modified: 2026-04-30
-License: MIT
+- **Author:** L. Saetta
+- **Version:** 0.1.0
+- **Last modified:** 2026-05-02
+- **License:** MIT
 
 `enterprise_ai_deployment` contains the implementation for the
 `oci-enterprise-ai-deployer` command line tools.
