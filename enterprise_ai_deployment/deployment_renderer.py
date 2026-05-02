@@ -194,7 +194,7 @@ def _render_inbound_auth(security: dict[str, Any]) -> dict[str, Any] | None:
         return None
     auth_type = str(security.get("auth_type", "NO_AUTH")).upper()
     if auth_type == "NO_AUTH":
-        return None
+        return {"inboundAuthConfigType": "NO_AUTH_CONFIG"}
     return {
         "inboundAuthConfigType": auth_type,
         "idcsConfig": {

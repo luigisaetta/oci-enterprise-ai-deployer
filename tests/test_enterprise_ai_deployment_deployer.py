@@ -194,6 +194,35 @@ def test_render_artifacts_do_not_write_local_secret_values(
     )
 
 
+def test_render_artifacts_writes_no_auth_inbound_auth_config(tmp_path) -> None:
+    """NO_AUTH deployments pass the Limited Availability inbound auth enum."""
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_no_auth_yaml(tmp_path), encoding="utf-8")
+    config = load_deployment_config(config_path)
+
+    artifacts = render_artifacts(
+        config,
+        ImageReference(
+            container_uri="fra.ocir.io/ns/ai-agents/demo-agent",
+            tag="abc1234",
+        ),
+        tmp_path / "generated",
+    )
+
+    assert artifacts.inbound_auth_config is not None
+    auth_payload = json.loads(artifacts.inbound_auth_config.read_text(encoding="utf-8"))
+    hosted_application_payload = json.loads(
+        artifacts.hosted_application_create.read_text(encoding="utf-8")
+    )
+
+    assert auth_payload == {"inboundAuthConfigType": "NO_AUTH_CONFIG"}
+    assert (
+        hosted_application_payload["jsonFiles"]["inboundAuthConfig"]
+        == str(artifacts.inbound_auth_config)
+    )
+
+
 def test_render_enterprise_solution_writes_per_deployment_artifacts(
     tmp_path, monkeypatch
 ) -> None:
@@ -1066,6 +1095,36 @@ hosted_application:
       API_KEY:
         source: local_env
         env_name: MY_AGENT_API_KEY
+
+hosted_deployment:
+  display_name: demo-agent-deployment
+  create_new_version: true
+  activate: true
+  wait_for_state: SUCCEEDED
+"""
+
+
+def _no_auth_yaml(tmp_path) -> str:
+    """Return a minimal valid deployment YAML with explicit NO_AUTH."""
+    return f"""
+application:
+  name: demo-agent
+  compartment_id: ocid1.compartment.oc1..example
+  region: eu-frankfurt-1
+  region_key: fra
+
+container:
+  context: {tmp_path}
+  dockerfile: Dockerfile
+  image_repository: ai-agents/demo-agent
+  tag_strategy: explicit
+  tag: "20260429"
+  ocir_namespace: auto
+
+hosted_application:
+  display_name: demo-agent
+  security:
+    auth_type: NO_AUTH
 
 hosted_deployment:
   display_name: demo-agent-deployment

@@ -680,6 +680,12 @@ The script must validate that `auth_type` is either `IDCS_AUTH_CONFIG` or
 `NO_AUTH`, and that required fields are present when `auth_type` is
 `IDCS_AUTH_CONFIG`.
 
+For `auth_type: NO_AUTH`, the generated Hosted Application create command must
+still pass an explicit inbound auth config JSON object. Because `NO_AUTH` is a
+Limited Availability feature that may not yet be represented in the public OCI
+CLI/SDK model, the deployment tool maps the declarative `NO_AUTH` value to the
+server-side inbound auth config type `NO_AUTH_CONFIG`.
+
 Typical fields to validate:
 
 - issuer URL

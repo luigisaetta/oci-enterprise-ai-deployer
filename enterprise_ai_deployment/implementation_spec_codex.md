@@ -450,6 +450,9 @@ Acceptance criteria:
 - `render` generates JSON for Hosted Deployment
 - files are written to `generated/` or to `--output-dir`
 - JSON files do not contain clear-text secrets
+- `auth_type: NO_AUTH` renders an explicit inbound auth config using
+  `inboundAuthConfigType: NO_AUTH_CONFIG`, because the public OCI CLI/SDK model
+  may lag this Limited Availability feature
 - the Hosted Application versus Hosted Deployment mapping follows the design table
 - fields still marked `TBD` are isolated and commented in code
 - tests compare JSON output with expected fixtures

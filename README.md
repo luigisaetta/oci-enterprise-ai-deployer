@@ -247,6 +247,11 @@ oci-cli==3.81.0
 This version includes the required `generative-ai hosted-application` and
 `generative-ai hosted-deployment` commands.
 
+`auth_type: NO_AUTH` for Hosted Applications is a Limited Availability OCI
+feature. The public OCI CLI/SDK model for `oci-cli==3.81.0` may not list this
+mode yet, so the deployer maps declarative `NO_AUTH` to the server-side inbound
+auth config type `NO_AUTH_CONFIG` when rendering OCI CLI JSON artifacts.
+
 Check the OCI CLI from the active environment:
 
 ```bash
