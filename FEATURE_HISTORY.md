@@ -2,12 +2,42 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.1.0
-- **Last modified:** 2026-05-02
+- **Last modified:** 2026-05-03
 - **License:** MIT
 
 This document tracks the functional story of the deployer as features are added
 over time. It is intentionally more narrative than a release changelog: the goal
 is to keep a clear memory of why each capability was introduced.
+
+## 2026-05-03 - Rollback to Immutable Image Tag
+
+The deployer now supports a basic rollback workflow based on immutable container
+image tags.
+
+New capabilities:
+
+- Added implementation for `rollback --to-tag <tag>`.
+- Calculated rollback image URIs without modifying the YAML configuration file.
+- Reused the existing Hosted Application by resolving it from the configured
+  Hosted Application display name.
+- Created a new Hosted Deployment that points to the requested image tag.
+- Preserved serial execution for Enterprise Solution YAML files with multiple
+  deployments.
+- Stopped rollback execution immediately on the first deployment failure.
+- Added `--dry-run` support so rollback commands can be reviewed before OCI
+  resources are changed.
+- Added tests for dry-run rollback, successful Hosted Deployment creation, and
+  missing Hosted Application failure handling.
+- Documented rollback usage in the main README.
+
+Example:
+
+```bash
+python oci_ai_deploy.py \
+  --config enterprise_ai_deployment/examples/enterprise_solution_dev.yaml \
+  --env-file enterprise_ai_deployment/examples/agent_dev.env.local \
+  rollback --to-tag abc1234
+```
 
 ## 2026-05-02 - Enterprise Solution Deployments
 

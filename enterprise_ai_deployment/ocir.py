@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-02
+Last modified: 2026-05-03
 License: MIT
 
 Description:
@@ -76,6 +76,7 @@ def build_image_reference(
     config: DeploymentConfig,
     namespace: str | None = None,
     deployment: DeploymentUnitConfig | None = None,
+    tag_override: str | None = None,
 ) -> ImageReference:
     """Build the OCIR image URI and tag from deployment configuration."""
     deployment_config = deployment or config.deployments[0]
@@ -83,7 +84,7 @@ def build_image_reference(
     resolved_namespace = namespace or container.ocir_namespace
     if resolved_namespace == "auto":
         resolved_namespace = "<resolved-ocir-namespace>"
-    tag = resolve_image_tag(config, deployment=deployment_config)
+    tag = tag_override or resolve_image_tag(config, deployment=deployment_config)
     container_uri = (
         f"{build_ocir_registry(config.application.region_key)}/"
         f"{resolved_namespace}/{container.image_repository}"

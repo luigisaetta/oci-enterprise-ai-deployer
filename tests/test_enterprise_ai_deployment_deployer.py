@@ -1053,6 +1053,162 @@ def test_create_deployment_requires_hosted_application_id(
     assert "requires --hosted-application-id" in captured.out
 
 
+def test_rollback_dry_run_creates_deployment_with_requested_tag(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Dry-run rollback shows a new deployment pointing to the requested tag."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("subprocess.run must not be called in dry-run mode")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "rollback",
+            "--to-tag",
+            "previous-tag",
+            "--dry-run",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Rollback plan:" in captured.out
+    assert "rollback tag: previous-tag" in captured.out
+    assert "demo-agent:previous-tag" in captured.out
+    assert "--hosted-application-id '<existing-hosted-application-id>'" in captured.out
+    assert "--active-artifact-tag previous-tag" in captured.out
+    assert "Dry run: no OCI commands were executed." in captured.out
+
+
+def test_rollback_creates_new_deployment_for_existing_application(
+    tmp_path, monkeypatch
+) -> None:
+    """Rollback resolves the app by name and creates a deployment for the tag."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[-3:] == ["os", "ns", "get"]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps({"data": "mytenancy"}), stderr=""
+            )
+        if "list-hosted-applications" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {
+                        "data": {
+                            "items": [
+                                {
+                                    "display-name": "demo-agent",
+                                    "id": "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..existing",
+                                }
+                            ]
+                        }
+                    }
+                ),
+                stderr="",
+            )
+        if "hosted-deployment" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {
+                        "data": {
+                            "id": "ocid1.generativeaihosteddeployment.oc1.eu-frankfurt-1..rollback"
+                        }
+                    }
+                ),
+                stderr="",
+            )
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "rollback",
+            "--to-tag",
+            "previous-tag",
+        ]
+    )
+
+    assert exit_code == 0
+    assert len(calls) == 3
+    assert calls[0][-3:] == ["os", "ns", "get"]
+    assert "list-hosted-applications" in calls[1]
+    assert "hosted-deployment" in calls[2]
+    assert (
+        "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..existing" in calls[2]
+    )
+    assert "--active-artifact-container-uri" in calls[2]
+    assert "fra.ocir.io/mytenancy/ai-agents/demo-agent" in calls[2]
+    assert "--active-artifact-tag" in calls[2]
+    assert "previous-tag" in calls[2]
+
+
+def test_rollback_fails_when_hosted_application_is_missing(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Rollback requires an existing Hosted Application to attach to."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+
+    def fake_run(command, **_kwargs):
+        if command[-3:] == ["os", "ns", "get"]:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps({"data": "mytenancy"}), stderr=""
+            )
+        if "list-hosted-applications" in command:
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps({"data": {"items": []}}), stderr=""
+            )
+        raise AssertionError("hosted deployment must not be created")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "rollback",
+            "--to-tag",
+            "previous-tag",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Rollback failed" in captured.out
+    assert "Hosted Application 'demo-agent' was not found" in captured.out
+
+
 def test_cli_help_lists_required_commands(capsys) -> None:
     """CLI help exposes the first supported command set."""
     try:

@@ -190,6 +190,16 @@ python oci_ai_deploy.py \
   deploy
 ```
 
+Rollback to a previous immutable image tag creates a new Hosted Deployment
+attached to the existing Hosted Application:
+
+```bash
+python oci_ai_deploy.py \
+  --config enterprise_ai_deployment/examples/enterprise_solution_dev.yaml \
+  --env-file enterprise_ai_deployment/examples/agent_dev.env.local \
+  rollback --to-tag abc1234
+```
+
 A real `deploy` runs:
 
 ```text

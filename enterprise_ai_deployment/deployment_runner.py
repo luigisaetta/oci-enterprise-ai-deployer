@@ -165,6 +165,8 @@ def run_command(args: argparse.Namespace) -> int:
         _run_create_deployment_command(context, args)
     elif args.command == "deploy":
         _run_deploy_command(context, args)
+    elif args.command == "rollback":
+        _run_rollback_command(context, args)
     else:
         print(f"Command {args.command!r} is not implemented in this first task.")
     return 0
@@ -195,6 +197,57 @@ def _run_deploy_command(context: DeploymentContext, args: argparse.Namespace) ->
         _run_single_deployment(context, deployment_context, args)
     if args.dry_run:
         print("Dry run: no OCI commands were executed.")
+
+
+def _run_rollback_command(context: DeploymentContext, args: argparse.Namespace) -> None:
+    """Create new Hosted Deployments that point to a previous immutable tag."""
+    _print_rollback_plan(context, args.to_tag)
+    for deployment_context in context.deployments:
+        _run_single_rollback(context, deployment_context, args)
+    if args.dry_run:
+        print("Dry run: no OCI commands were executed.")
+
+
+def _run_single_rollback(
+    context: DeploymentContext,
+    deployment_context: DeploymentExecutionContext,
+    args: argparse.Namespace,
+) -> None:
+    """Rollback one deployment and stop the solution on the first failure."""
+    print()
+    print(f"Starting rollback: {deployment_context.deployment.name}")
+    try:
+        if args.dry_run:
+            create_hosted_deployment(
+                context,
+                args,
+                hosted_application_id="<existing-hosted-application-id>",
+                deployment_context=deployment_context,
+            )
+            return
+        hosted_application_id = _find_hosted_application_id_by_name(
+            OciCliConfig(region=context.config.application.region),
+            context.config.application.compartment_id,
+            deployment_context.deployment.hosted_application.display_name,
+        )
+        if not hosted_application_id:
+            raise RuntimeError(
+                "Hosted Application "
+                f"{deployment_context.deployment.hosted_application.display_name!r} "
+                "was not found. Rollback requires an existing Hosted Application."
+            )
+        create_hosted_deployment(
+            context,
+            args,
+            hosted_application_id,
+            deployment_context=deployment_context,
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "Rollback failed for Enterprise Solution "
+            f"{context.config.application.name!r}, deployment "
+            f"{deployment_context.deployment.name!r}: {exc}"
+        ) from exc
 
 
 def _run_single_deployment(
@@ -477,7 +530,10 @@ def _prepare_deployment_context(
 ) -> DeploymentExecutionContext:
     """Resolve image and optionally render artifacts for one deployment."""
     image_reference = build_image_reference(
-        config, namespace=namespace, deployment=deployment
+        config,
+        namespace=namespace,
+        deployment=deployment,
+        tag_override=args.to_tag if args.command == "rollback" else None,
     )
     artifacts = (
         render_artifacts(
@@ -538,6 +594,21 @@ def _print_plan(context: DeploymentContext) -> None:
             f"({deployment_context.image_reference.image_uri})"
         )
         _print_rendered(deployment_context.artifacts)
+
+
+def _print_rollback_plan(context: DeploymentContext, tag: str) -> None:
+    """Print a concise rollback plan."""
+    print("Rollback plan:")
+    print(f"- enterprise solution: {context.config.application.name}")
+    print(f"- compartment: {context.config.application.compartment_id}")
+    print(f"- region: {context.config.application.region}")
+    print(f"- rollback tag: {tag}")
+    print(f"- deployments: {len(context.deployments)}")
+    for deployment_context in context.deployments:
+        print(
+            f"- deployment: {deployment_context.deployment.name} "
+            f"({deployment_context.image_reference.image_uri})"
+        )
 
 
 def _print_oci_command(title: str, command: list[str]) -> None:
@@ -610,6 +681,7 @@ def _needs_runtime_image_reference(args: argparse.Namespace) -> bool:
         "push",
         "create-deployment",
         "deploy",
+        "rollback",
     }
 
 
