@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-02
+Last modified: 2026-05-03
 License: MIT
 
 Description:
@@ -96,15 +96,26 @@ def build_parser() -> argparse.ArgumentParser:
         "create-application",
         "deploy",
     ):
-        subparsers.add_parser(command_name)
+        _add_common_subcommand_options(subparsers.add_parser(command_name))
     create_deployment = subparsers.add_parser("create-deployment")
+    _add_common_subcommand_options(create_deployment)
     create_deployment.add_argument(
         "--hosted-application-id",
         help="Existing Hosted Application OCID to attach the deployment to.",
     )
     rollback = subparsers.add_parser("rollback")
+    _add_common_subcommand_options(rollback)
     rollback.add_argument("--to-tag", required=True)
     return parser
+
+
+def _add_common_subcommand_options(parser: argparse.ArgumentParser) -> None:
+    """Accept common global flags after the subcommand as a convenience."""
+    parser.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--non-interactive", action="store_true", default=argparse.SUPPRESS
+    )
+    parser.add_argument("--verbose", action="store_true", default=argparse.SUPPRESS)
 
 
 def main(argv: list[str] | None = None) -> int:

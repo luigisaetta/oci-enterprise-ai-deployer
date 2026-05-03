@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-03
 License: MIT
 
 Description:
@@ -644,6 +644,37 @@ def test_deploy_dry_run_renders_application_and_deployment_commands(
         captured.out
     )
     assert "--hosted-application-id '<created-hosted-application-id>'" in captured.out
+    assert "Dry run: no OCI commands were executed." in captured.out
+
+
+def test_deploy_accepts_dry_run_after_subcommand(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Documented deploy --dry-run ordering is accepted by the CLI."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("subprocess.run must not be called in dry-run mode")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "deploy",
+            "--dry-run",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
     assert "Dry run: no OCI commands were executed." in captured.out
 
 
