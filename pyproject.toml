@@ -1,6 +1,6 @@
 # Author: L. Saetta
-# Version: 0.1.0
-# Last modified: 2026-04-30
+# Version: 0.9.0
+# Last modified: 2026-05-05
 # License: MIT
 
 [build-system]
@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oci-enterprise-ai-deployer"
-version = "0.1.0"
+version = "0.9.0"
 description = "CLI utilities for OCI Enterprise AI Hosted Application deployments."
 readme = "README.md"
 requires-python = ">=3.11"

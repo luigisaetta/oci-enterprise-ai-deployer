@@ -1,13 +1,30 @@
 # OCI Enterprise AI Deployer Feature History
 
 - **Author:** L. Saetta
-- **Version:** 0.1.0
+- **Version:** 0.9.0
 - **Last modified:** 2026-05-05
 - **License:** MIT
 
 This document tracks the functional story of the deployer as features are added
 over time. It is intentionally more narrative than a release changelog: the goal
 is to keep a clear memory of why each capability was introduced.
+
+## 2026-05-05 - Version 0.9.0
+
+Version 0.9.0 marks the project as ready for broader validation of the full
+deployment workflow.
+
+Release focus:
+
+- Consolidated the CLI deployment flow for OCI Enterprise AI Hosted
+  Applications and Hosted Deployments.
+- Included the Web UI operational path with backend validation, dry-run,
+  rendering, build, deploy, and streamed progress.
+- Added Linux Web UI deployment documentation for Conda, npm, firewall, API,
+  and frontend startup.
+- Added optional Web UI to API shared-key protection for trusted-network usage.
+- Preserved version 1 design constraints while preparing the project for
+  field testing before a future 1.0 release.
 
 ## 2026-05-05 - Web UI API Key Protection
 
