@@ -20,6 +20,43 @@ from enterprise_ai_deployment import api
 from enterprise_ai_deployment.api import RUNS, StoredRun, create_app
 
 
+def test_cors_origins_are_configurable(monkeypatch) -> None:
+    """CORS origins can be configured for remote web console hosts."""
+    monkeypatch.setenv(
+        "DEPLOYER_WEB_CORS_ORIGINS",
+        "http://192.168.1.25:3000, http://localhost:3000",
+    )
+    client = TestClient(create_app())
+
+    response = client.options(
+        "/api/actions/preview",
+        headers={
+            "Origin": "http://192.168.1.25:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://192.168.1.25:3000"
+
+
+def test_cors_origins_can_allow_all_clients(monkeypatch) -> None:
+    """CORS can be opened for development networks when explicitly configured."""
+    monkeypatch.setenv("DEPLOYER_WEB_CORS_ORIGINS", "*")
+    client = TestClient(create_app())
+
+    response = client.options(
+        "/api/actions/preview",
+        headers={
+            "Origin": "http://192.168.1.25:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
 def test_create_preview_run_and_stream_validation_events(tmp_path, monkeypatch) -> None:
     """Preview runs return a run id and stream real validation progress events."""
     RUNS.clear()

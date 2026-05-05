@@ -80,6 +80,18 @@ class ValidationResult:
 
 
 RUNS: dict[str, StoredRun] = {}
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
+
+
+def _get_cors_origins() -> list[str]:
+    """Return browser origins allowed to call the development API."""
+    value = os.environ.get("DEPLOYER_WEB_CORS_ORIGINS")
+    if not value:
+        return list(DEFAULT_CORS_ORIGINS)
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
 def create_app() -> FastAPI:
@@ -87,10 +99,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="OCI Enterprise AI Deployer API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-        ],
+        allow_origins=_get_cors_origins(),
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],

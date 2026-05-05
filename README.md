@@ -120,6 +120,28 @@ python -m uvicorn \
   --port 8000
 ```
 
+If the web console is opened from another host, expose the API host and allow
+the browser origin used by the frontend:
+
+```bash
+DEPLOYER_WEB_CORS_ORIGINS=http://192.168.1.25:3000 \
+python -m uvicorn \
+  enterprise_ai_deployment.api:app \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+For development on a trusted network, CORS can be opened to every browser
+origin:
+
+```bash
+DEPLOYER_WEB_CORS_ORIGINS='*' \
+python -m uvicorn \
+  enterprise_ai_deployment.api:app \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
 Start the frontend:
 
 ```bash
@@ -137,7 +159,8 @@ http://localhost:3000
 If the backend runs elsewhere:
 
 ```bash
-NEXT_PUBLIC_DEPLOYER_API_URL=http://localhost:8000 npm run dev
+NEXT_PUBLIC_DEPLOYER_API_URL=http://192.168.1.25:8000 \
+npm run dev -- --hostname 0.0.0.0
 ```
 
 Uploaded files do not preserve their original local path in the browser. For
