@@ -26,6 +26,23 @@ Release focus:
 - Preserved version 1 design constraints while preparing the project for
   field testing before a future 1.0 release.
 
+## 2026-05-05 - Compartment Name Resolution
+
+Deployment YAML can now identify the shared OCI compartment by display name
+instead of OCID.
+
+New capabilities:
+
+- Added `compartment_name` as an alternative to `compartment_id` for both
+  legacy single-deployment YAML and Enterprise Solution YAML.
+- Enforced that exactly one of `compartment_id` or `compartment_name` is
+  provided.
+- Resolved `compartment_name` through OCI IAM lookup before validation,
+  rendering, dry-run, build, or deployment proceeds.
+- Reused the same resolver in the command-line workflow and Web UI backend.
+- Preserved the interactive menu behavior that lets users choose when multiple
+  compartments share the same name.
+
 ## 2026-05-05 - Web UI API Key Protection
 
 The Web UI and FastAPI backend now support an optional shared API key for
