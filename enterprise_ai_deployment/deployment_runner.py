@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-03
+Last modified: 2026-05-05
 License: MIT
 
 Description:
@@ -28,6 +28,7 @@ from enterprise_ai_deployment.cli_commands import (
     build_list_container_repositories_command,
     build_list_hosted_applications_command,
 )
+from enterprise_ai_deployment.compartments import resolve_deployment_config_compartment
 from enterprise_ai_deployment.config import OciCliConfig
 from enterprise_ai_deployment.deployment_config import (
     DeploymentConfig,
@@ -83,6 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--env-file", help="Optional local .env file with secret references."
     )
     parser.add_argument("--output-dir", default="enterprise_ai_deployment/generated")
+    parser.add_argument("--profile", help="OCI CLI profile used for OCI lookups.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--verbose", action="store_true")
@@ -226,7 +228,7 @@ def _run_single_rollback(
             )
             return
         hosted_application_id = _find_hosted_application_id_by_name(
-            OciCliConfig(region=context.config.application.region),
+            _context_oci_cli_config(context, args),
             context.config.application.compartment_id,
             deployment_context.deployment.hosted_application.display_name,
         )
@@ -362,7 +364,7 @@ def ensure_ocir_repository(
     """Ensure the target OCIR repository exists before pushing an image."""
     deployment_context = deployment_context or context.first
     repository_name = build_ocir_repository_name(deployment_context.deployment)
-    cli_config = OciCliConfig(region=context.config.application.region)
+    cli_config = _context_oci_cli_config(context, args)
     create_command = build_create_container_repository_command(
         cli_config,
         context.config.application.compartment_id,
@@ -405,7 +407,7 @@ def create_hosted_application(
     deployment = deployment_context.deployment
     if not args.dry_run:
         existing_hosted_application_id = _find_hosted_application_id_by_name(
-            OciCliConfig(region=config.application.region),
+            _context_oci_cli_config(context, args),
             config.application.compartment_id,
             deployment.hosted_application.display_name,
         )
@@ -419,7 +421,7 @@ def create_hosted_application(
 
     artifacts = deployment_context.artifacts
     command = build_create_hosted_application_command(
-        OciCliConfig(region=config.application.region),
+        _context_oci_cli_config(context, args),
         HostedApplicationCreateRequest(
             display_name=deployment.hosted_application.display_name,
             compartment_id=config.application.compartment_id,
@@ -476,7 +478,7 @@ def create_hosted_deployment(
     deployment_context = deployment_context or context.first
     deployment = deployment_context.deployment
     command = build_create_hosted_deployment_command(
-        OciCliConfig(region=config.application.region),
+        _context_oci_cli_config(context, args),
         HostedDeploymentCreateRequest(
             hosted_application_id=hosted_application_id,
             display_name=deployment.hosted_deployment.display_name,
@@ -498,9 +500,11 @@ def create_hosted_deployment(
 def _prepare_context(args: argparse.Namespace, render: bool) -> DeploymentContext:
     """Load, validate, resolve image reference, and optionally render artifacts."""
     config = load_deployment_config(args.config, env_file=args.env_file)
+    cli_config = _build_oci_cli_config(config, args)
+    config = resolve_deployment_config_compartment(config, cli_config)
     validate_deployment_config(config)
     namespace = (
-        _resolve_ocir_namespace(OciCliConfig(region=config.application.region))
+        _resolve_ocir_namespace(cli_config)
         if _needs_runtime_image_reference(args)
         and any(
             deployment.container.ocir_namespace == "auto"
@@ -513,6 +517,23 @@ def _prepare_context(args: argparse.Namespace, render: bool) -> DeploymentContex
         for deployment in config.deployments
     )
     return DeploymentContext(config=config, deployments=deployments)
+
+
+def _build_oci_cli_config(
+    config: DeploymentConfig, args: argparse.Namespace
+) -> OciCliConfig:
+    """Build OCI CLI options from loaded config and global CLI flags."""
+    return OciCliConfig(profile=args.profile, region=config.application.region)
+
+
+def _context_oci_cli_config(
+    context: DeploymentContext, args: argparse.Namespace
+) -> OciCliConfig:
+    """Build OCI CLI options from an already prepared deployment context."""
+    return OciCliConfig(
+        profile=args.profile,
+        region=context.config.application.region,
+    )
 
 
 def _validate_local_prerequisites(context: DeploymentContext) -> None:

@@ -134,6 +134,109 @@ def test_load_enterprise_solution_config_reads_multiple_deployments(
     validate_deployment_config(config)
 
 
+def test_load_deployment_config_accepts_compartment_name(tmp_path) -> None:
+    """Deployment YAML can reference the shared compartment by display name."""
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(
+        _valid_yaml_by_compartment_name(tmp_path),
+        encoding="utf-8",
+    )
+
+    config = load_deployment_config(config_path)
+
+    assert config.application.compartment_name == "agent-demo"
+    assert config.application.compartment_id == "agent-demo"
+
+
+def test_load_deployment_config_rejects_ambiguous_compartment_reference(
+    tmp_path,
+) -> None:
+    """YAML must use either compartment_id or compartment_name, not both."""
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(
+        _valid_yaml(tmp_path).replace(
+            "  compartment_id: ocid1.compartment.oc1..example",
+            (
+                "  compartment_id: ocid1.compartment.oc1..example\n"
+                "  compartment_name: agent-demo"
+            ),
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DeploymentConfigError) as exc_info:
+        load_deployment_config(config_path)
+
+    assert "provide exactly one of compartment_id or compartment_name" in str(
+        exc_info.value
+    )
+
+
+def test_render_dry_run_resolves_compartment_name_before_rendering(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Non-interactive commands resolve compartment_name through OCI CLI."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(
+        _valid_yaml_by_compartment_name(tmp_path),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if "compartment" in command and "list" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {
+                        "data": [
+                            {
+                                "name": "agent-demo",
+                                "id": "ocid1.compartment.oc1..resolved",
+                            }
+                        ]
+                    }
+                ),
+                stderr="",
+            )
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "--dry-run",
+            "render",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    hosted_application_payload = json.loads(
+        (tmp_path / "generated" / "create-hosted-application.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert exit_code == 0
+    assert len(calls) == 1
+    assert "--name" in calls[0]
+    assert "agent-demo" in calls[0]
+    assert hosted_application_payload["compartmentId"] == (
+        "ocid1.compartment.oc1..resolved"
+    )
+    assert "Generated OCI CLI JSON artifacts:" in captured.out
+
+
 def test_render_artifacts_do_not_write_local_secret_values(
     tmp_path, monkeypatch
 ) -> None:
@@ -217,9 +320,8 @@ def test_render_artifacts_writes_no_auth_inbound_auth_config(tmp_path) -> None:
     )
 
     assert auth_payload == {"inboundAuthConfigType": "NO_AUTH_CONFIG"}
-    assert (
-        hosted_application_payload["jsonFiles"]["inboundAuthConfig"]
-        == str(artifacts.inbound_auth_config)
+    assert hosted_application_payload["jsonFiles"]["inboundAuthConfig"] == str(
+        artifacts.inbound_auth_config
     )
 
 
@@ -647,9 +749,7 @@ def test_deploy_dry_run_renders_application_and_deployment_commands(
     assert "Dry run: no OCI commands were executed." in captured.out
 
 
-def test_deploy_accepts_dry_run_after_subcommand(
-    tmp_path, monkeypatch, capsys
-) -> None:
+def test_deploy_accepts_dry_run_after_subcommand(tmp_path, monkeypatch, capsys) -> None:
     """Documented deploy --dry-run ordering is accepted by the CLI."""
     monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
     (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
@@ -1289,6 +1389,14 @@ hosted_deployment:
   activate: true
   wait_for_state: SUCCEEDED
 """
+
+
+def _valid_yaml_by_compartment_name(tmp_path) -> str:
+    """Return a valid deployment YAML that uses a compartment display name."""
+    return _valid_yaml(tmp_path).replace(
+        "  compartment_id: ocid1.compartment.oc1..example",
+        "  compartment_name: agent-demo",
+    )
 
 
 def _no_auth_yaml(tmp_path) -> str:

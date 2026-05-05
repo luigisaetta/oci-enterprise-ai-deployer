@@ -26,6 +26,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from enterprise_ai_deployment.compartments import resolve_deployment_config_compartment
+from enterprise_ai_deployment.config import OciCliConfig
 from enterprise_ai_deployment.deployment_config import (
     DeploymentConfigError,
     load_deployment_config,
@@ -336,6 +338,10 @@ def _validate_uploaded_inputs(run: StoredRun) -> ValidationResult:
 
             config = load_deployment_config(yaml_path, env_file=env_path)
             config = replace(config, source_path=repo_root / "deployment.yaml")
+            config = resolve_deployment_config_compartment(
+                config,
+                OciCliConfig(profile=run.profile, region=run.region),
+            )
             validate_deployment_config(config)
             ocir_registry = build_ocir_registry(config.application.region_key)
             require_docker_login(ocir_registry)
@@ -391,6 +397,8 @@ async def _stream_cli_command(
             str(env_path),
             "--output-dir",
             run.output_dir,
+            "--profile",
+            run.profile,
         ]
         if dry_run:
             command.append("--dry-run")

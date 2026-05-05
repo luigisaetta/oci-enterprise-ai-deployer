@@ -428,6 +428,10 @@ deployments:
       wait_for_state: SUCCEEDED
 ```
 
+The shared compartment can be declared with either `compartment_id` or
+`compartment_name`. Name-based declarations are resolved to a compartment OCID
+through OCI IAM lookup before the deployment plan is validated or rendered.
+
 Legacy single-deployment example:
 
 ```yaml

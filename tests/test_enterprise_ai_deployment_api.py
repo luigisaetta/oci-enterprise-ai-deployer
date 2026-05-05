@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from enterprise_ai_deployment import api
 from enterprise_ai_deployment.api import RUNS, StoredRun, create_app
+from enterprise_ai_deployment.compartments import clear_compartment_cache
 
 
 def test_cors_origins_are_configurable(monkeypatch) -> None:
@@ -228,6 +230,54 @@ def test_validate_run_reports_missing_ocir_docker_login(tmp_path, monkeypatch) -
     assert '"state": "failed"' in body
     assert "Docker is not logged in to the target OCIR registry 'fra.ocir.io'" in body
     assert "docker login fra.ocir.io" in body
+
+
+def test_web_validation_resolves_compartment_name(tmp_path, monkeypatch) -> None:
+    """Web validation resolves compartment_name with the requested OCI profile."""
+    RUNS.clear()
+    clear_compartment_cache()
+    _set_docker_login(tmp_path, monkeypatch)
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "data": [
+                        {
+                            "name": "agent-demo",
+                            "id": "ocid1.compartment.oc1..resolved",
+                        }
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(
+        "enterprise_ai_deployment.compartments.subprocess.run", fake_run
+    )
+    run = StoredRun(
+        run_id="run",
+        yaml=_valid_web_yaml_by_compartment_name(),
+        env="",
+        action="validate",
+        profile="PROD",
+        region="eu-frankfurt-1",
+        output_dir="generated",
+    )
+
+    result = api._validate_uploaded_inputs(run)
+
+    assert result.error is None
+    assert calls
+    assert "--profile" in calls[0]
+    assert "PROD" in calls[0]
+    assert "--name" in calls[0]
+    assert "agent-demo" in calls[0]
 
 
 def test_render_run_streams_real_cli_render(tmp_path, monkeypatch) -> None:
@@ -447,6 +497,14 @@ hosted_application:
 hosted_deployment:
   display_name: Demo Agent Deployment
 """
+
+
+def _valid_web_yaml_by_compartment_name() -> str:
+    """Return web YAML that uses a compartment display name."""
+    return _valid_web_yaml().replace(
+        "  compartment_id: ocid1.compartment.oc1..example",
+        "  compartment_name: agent-demo",
+    )
 
 
 def _set_docker_login(tmp_path: Path, monkeypatch) -> None:

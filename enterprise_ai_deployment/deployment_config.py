@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-02
+Last modified: 2026-05-05
 License: MIT
 
 Description:
@@ -37,6 +37,7 @@ class ApplicationConfig:
     compartment_id: str
     region: str
     region_key: str
+    compartment_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -170,9 +171,12 @@ def _parse_deployment_config(
     return DeploymentConfig(
         application=ApplicationConfig(
             name=application.name,
-            compartment_id=application.compartment_id,
+            compartment_id=application.compartment_id
+            or application.compartment_name
+            or "",
             region=application.region,
             region_key=application.region_key,
+            compartment_name=application.compartment_name,
         ),
         deployments=tuple(
             _parse_deployment_unit(deployment) for deployment in deployment_items

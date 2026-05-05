@@ -52,7 +52,7 @@ const API_KEY = process.env.NEXT_PUBLIC_DEPLOYER_API_KEY ?? "";
 
 const SAMPLE_YAML = `application:
   name: my-agent-app-dev
-  compartment_id: ocid1.compartment.oc1..example
+  compartment_name: my-compartment
   region: eu-frankfurt-1
   region_key: fra
 

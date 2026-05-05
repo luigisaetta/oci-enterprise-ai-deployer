@@ -245,6 +245,11 @@ hosted_deployment:
   wait_for_state: SUCCEEDED
 ```
 
+`compartment_name` is also accepted as an alternative to `compartment_id`.
+Exactly one of the two fields must be present. When `compartment_name` is used,
+the command-line tool and Web UI resolve it through OCI IAM compartment lookup
+before validation, rendering, or deployment proceeds.
+
 Version 1 must also support this Enterprise Solution structure:
 
 ```yaml

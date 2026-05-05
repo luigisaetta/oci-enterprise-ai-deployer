@@ -11,6 +11,7 @@ Description:
 import json
 import subprocess
 
+from enterprise_ai_deployment import compartments
 from enterprise_ai_deployment import workflows
 from enterprise_ai_deployment.cli_commands import (
     HostedApplicationCreateRequest,
@@ -157,7 +158,7 @@ def test_resolve_compartment_id_from_unique_name(monkeypatch) -> None:
             stderr="",
         )
 
-    monkeypatch.setattr(workflows.subprocess, "run", fake_run)
+    monkeypatch.setattr(compartments.subprocess, "run", fake_run)
 
     assert resolve_compartment_id(OciCliConfig(), "agent-demo") == (
         "ocid1.compartment.oc1..resolved"
@@ -176,7 +177,7 @@ def test_resolve_compartment_id_raises_when_name_is_missing(monkeypatch) -> None
             stderr="",
         )
 
-    monkeypatch.setattr(workflows.subprocess, "run", fake_run)
+    monkeypatch.setattr(compartments.subprocess, "run", fake_run)
 
     try:
         resolve_compartment_id(OciCliConfig(), "missing")
@@ -209,7 +210,7 @@ def test_resolve_compartment_id_uses_session_cache(monkeypatch) -> None:
             stderr="",
         )
 
-    monkeypatch.setattr(workflows.subprocess, "run", fake_run)
+    monkeypatch.setattr(compartments.subprocess, "run", fake_run)
 
     config = OciCliConfig(profile="PROD", region="us-chicago-1")
 

@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-02
+Last modified: 2026-05-05
 License: MIT
 
 Description:
@@ -38,9 +38,19 @@ class ApplicationSchema(StrictModel):
     """Application identity and OCI region settings."""
 
     name: NonEmptyString
-    compartment_id: NonEmptyString
+    compartment_id: NonEmptyString | None = None
+    compartment_name: NonEmptyString | None = None
     region: NonEmptyString
     region_key: NonEmptyString
+
+    @model_validator(mode="after")
+    def validate_compartment_reference(self) -> "ApplicationSchema":
+        """Require exactly one supported compartment reference."""
+        if bool(self.compartment_id) == bool(self.compartment_name):
+            raise ValueError(
+                "provide exactly one of compartment_id or compartment_name"
+            )
+        return self
 
 
 class ContainerSchema(StrictModel):

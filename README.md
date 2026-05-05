@@ -60,6 +60,10 @@ enterprise_solution:
   region_key: fra
 ```
 
+Use `compartment_id` when you already know the OCI compartment OCID. You can
+also use `compartment_name` instead; the CLI and Web UI resolve that name
+through OCI before validation, rendering, or deployment.
+
 Each item in `deployments` defines one deployable component. Every deployment
 has its own dedicated Hosted Application and one Hosted Deployment attached to
 that Hosted Application.

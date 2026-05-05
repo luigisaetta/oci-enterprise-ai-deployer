@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-05
 License: MIT
 
 Description:
@@ -14,6 +14,10 @@ from __future__ import annotations
 import json
 import subprocess
 
+from enterprise_ai_deployment.compartments import (
+    clear_compartment_cache,
+    resolve_compartment_id as resolve_compartment_id_common,
+)
 from enterprise_ai_deployment.cli_commands import (
     HostedApplicationCreateRequest,
     HostedApplicationJsonOptions,
@@ -22,10 +26,9 @@ from enterprise_ai_deployment.cli_commands import (
     build_create_hosted_deployment_command,
     build_get_hosted_application_command,
     build_get_hosted_deployment_command,
-    build_list_compartments_by_name_command,
     build_list_hosted_applications_command,
 )
-from enterprise_ai_deployment.config import COMPARTMENT_OCID_PREFIX, OciCliConfig
+from enterprise_ai_deployment.config import OciCliConfig
 from enterprise_ai_deployment.rendering import (
     confirm,
     console,
@@ -35,8 +38,6 @@ from enterprise_ai_deployment.rendering import (
     show_hosted_application_details,
     show_hosted_applications,
 )
-
-_COMPARTMENT_CACHE: dict[tuple[str | None, str | None, str], str] = {}
 
 
 def run_oci_command(command: list[str]) -> int:
@@ -215,73 +216,34 @@ def _compartment_label(compartment: dict[str, object]) -> str:
 
 def resolve_compartment_id(config: OciCliConfig, name_or_ocid: str) -> str:
     """Resolve a compartment OCID from either an OCID or a display name."""
-    value = name_or_ocid.strip()
-    if value.startswith(COMPARTMENT_OCID_PREFIX):
-        return value
-
-    cache_key = (config.profile, config.region, value)
-    cached_id = _COMPARTMENT_CACHE.get(cache_key)
-    if cached_id:
-        console().print(
-            f"Using cached compartment OCID for {value}: {cached_id}",
-            style="dim",
-        )
-        return cached_id
-
-    command = build_list_compartments_by_name_command(config, value)
     rich_console = console()
-    rich_console.print()
-    print_box("Resolve Compartment")
-    rich_console.print(copyable_text(" ".join(command), style="cyan"), soft_wrap=True)
-    result = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
+
+    def log_command(command: list[str]) -> None:
+        rich_console.print()
+        print_box("Resolve Compartment")
+        rich_console.print(
+            copyable_text(" ".join(command), style="cyan"), soft_wrap=True
+        )
+
+    def choose_match(matches: list[dict[str, object]]) -> dict[str, object]:
+        rich_console.print()
+        rich_console.print(
+            "Multiple compartments matched this name:", style="bold yellow"
+        )
+        for index, compartment in enumerate(matches, start=1):
+            rich_console.print(f" {index}. {_compartment_label(compartment)}")
+        while True:
+            selection = prompt("Select compartment", required=True)
+            if selection.isdigit() and 1 <= int(selection) <= len(matches):
+                return matches[int(selection) - 1]
+            rich_console.print("Invalid selection.", style="red")
+
+    return resolve_compartment_id_common(
+        config,
+        name_or_ocid,
+        choose_match=choose_match,
+        log_command=log_command,
     )
-    if result.returncode != 0:
-        if result.stderr:
-            rich_console.print(
-                copyable_text(result.stderr.strip(), style="yellow"),
-                soft_wrap=True,
-            )
-        raise RuntimeError(f"Unable to resolve compartment name: {value}")
-
-    try:
-        payload = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            "OCI CLI returned invalid JSON while resolving compartment."
-        ) from exc
-
-    matches = [
-        item
-        for item in _extract_items(payload)
-        if str(item.get("name") or "") == value and item.get("id")
-    ]
-    if not matches:
-        raise RuntimeError(f"No compartment found with name: {value}")
-    if len(matches) == 1:
-        compartment_id = str(matches[0]["id"])
-        _COMPARTMENT_CACHE[cache_key] = compartment_id
-        return compartment_id
-
-    rich_console.print()
-    rich_console.print("Multiple compartments matched this name:", style="bold yellow")
-    for index, compartment in enumerate(matches, start=1):
-        rich_console.print(f" {index}. {_compartment_label(compartment)}")
-    while True:
-        selection = prompt("Select compartment", required=True)
-        if selection.isdigit() and 1 <= int(selection) <= len(matches):
-            compartment_id = str(matches[int(selection) - 1]["id"])
-            _COMPARTMENT_CACHE[cache_key] = compartment_id
-            return compartment_id
-        rich_console.print("Invalid selection.", style="red")
-
-
-def clear_compartment_cache() -> None:
-    """Clear cached compartment name resolutions."""
-    _COMPARTMENT_CACHE.clear()
 
 
 def handle_get_hosted_application(config: OciCliConfig) -> None:
