@@ -91,6 +91,9 @@ enterprise_ai_deployment/examples/agent_dev.yaml
 The web interface lives in `apps/deployer-web` and works with the FastAPI
 backend in `enterprise_ai_deployment.api`.
 
+For a complete Linux host setup with Conda, npm, firewall ports, and start
+commands, see [WEB_UI_LINUX_DEPLOYMENT.md](WEB_UI_LINUX_DEPLOYMENT.md).
+
 It is intended as a safer operational surface for deployment preparation and
 review. From the browser, an operator can:
 
