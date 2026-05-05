@@ -133,6 +133,7 @@ the Linux instance.
 Start the FastAPI backend from the repository root:
 
 ```bash
+DEPLOYER_WEB_API_KEY='replace-with-a-long-random-value' \
 DEPLOYER_WEB_CORS_ORIGINS='*' \
 python -m uvicorn \
   enterprise_ai_deployment.api:app \
@@ -144,6 +145,7 @@ python -m uvicorn \
 network. For a stricter setup, replace it with the frontend origin:
 
 ```bash
+DEPLOYER_WEB_API_KEY='replace-with-a-long-random-value' \
 DEPLOYER_WEB_CORS_ORIGINS=http://192.168.1.25:3000 \
 python -m uvicorn \
   enterprise_ai_deployment.api:app \
@@ -166,13 +168,19 @@ Expected response:
 ## Start The Web Application
 
 Open a second terminal, activate the same Conda environment if needed, and start
-the frontend:
+the frontend. Use the same API key configured for the backend:
 
 ```bash
 cd apps/deployer-web
+NEXT_PUBLIC_DEPLOYER_API_KEY='replace-with-a-long-random-value' \
 NEXT_PUBLIC_DEPLOYER_API_URL=http://192.168.1.25:8100 \
 npm run dev -- --hostname 0.0.0.0
 ```
+
+The API key adds a small shared-secret check between the browser and the API.
+It is useful on a trusted development network, but it is not a substitute for a
+production identity provider because `NEXT_PUBLIC_` values are visible to the
+browser.
 
 Open the Web UI from a browser:
 
@@ -200,3 +208,5 @@ Before running build or deploy actions from the Web UI, verify:
 - Docker is logged in to the target OCIR registry
 - ports `3000` and `8100` are reachable from the browser client
 - the frontend was started with the correct `NEXT_PUBLIC_DEPLOYER_API_URL`
+- the backend `DEPLOYER_WEB_API_KEY` and frontend `NEXT_PUBLIC_DEPLOYER_API_KEY`
+  values match when API key protection is enabled

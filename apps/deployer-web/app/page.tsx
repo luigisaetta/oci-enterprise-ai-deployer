@@ -3,7 +3,7 @@
 /*
  * Author: L. Saetta
  * Version: 0.1.0
- * Last modified: 2026-04-30
+ * Last modified: 2026-05-05
  * License: MIT
  */
 
@@ -48,6 +48,7 @@ const ACTIONS: Record<ActionKey, string> = {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_DEPLOYER_API_URL ?? "http://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_DEPLOYER_API_KEY ?? "";
 
 const SAMPLE_YAML = `application:
   name: my-agent-app-dev
@@ -92,6 +93,16 @@ function fileSummary(file: UploadedFile | null, fallback: string) {
   return `${file.name} · ${formatBytes(file.size)}`;
 }
 
+function apiHeaders() {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (API_KEY) {
+    headers["X-API-Key"] = API_KEY;
+  }
+  return headers;
+}
+
 export default function DeployerConsole() {
   const [yamlFile, setYamlFile] = useState<UploadedFile | null>(null);
   const [envFile, setEnvFile] = useState<UploadedFile | null>(null);
@@ -105,7 +116,7 @@ export default function DeployerConsole() {
   const [runState, setRunState] = useState<"idle" | "running" | "succeeded" | "failed">(
     "idle",
   );
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const streamControllerRef = useRef<AbortController | null>(null);
   const eventCounterRef = useRef(0);
 
   const readiness = useMemo(() => {
@@ -154,8 +165,8 @@ export default function DeployerConsole() {
     setEnvContent(SAMPLE_ENV);
     setRunEvents([]);
     setRunState("idle");
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
+    streamControllerRef.current?.abort();
+    streamControllerRef.current = null;
   }
 
   function pushRunEvent(event: Omit<RunEvent, "id">) {
@@ -174,7 +185,7 @@ export default function DeployerConsole() {
       return;
     }
 
-    eventSourceRef.current?.close();
+    streamControllerRef.current?.abort();
     eventCounterRef.current = 0;
     setRunEvents([]);
     setRunState("running");
@@ -186,9 +197,7 @@ export default function DeployerConsole() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/actions/preview`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: apiHeaders(),
         body: JSON.stringify({
           yaml: yamlContent,
           env: envContent,
@@ -204,58 +213,46 @@ export default function DeployerConsole() {
       }
 
       const data = (await response.json()) as { run_id: string };
-      const source = new EventSource(`${API_BASE_URL}/api/runs/${data.run_id}/events`);
-      eventSourceRef.current = source;
+      const controller = new AbortController();
+      streamControllerRef.current = controller;
+      const streamResponse = await fetch(
+        `${API_BASE_URL}/api/runs/${data.run_id}/events`,
+        {
+          headers: apiHeaders(),
+          signal: controller.signal,
+        },
+      );
 
-      source.addEventListener("status", (event) => {
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          state: string;
-          step: string;
-        };
-        pushRunEvent({
-          kind: "status",
-          message: `Status: ${payload.state} · Step: ${payload.step}`,
-        });
-      });
+      if (!streamResponse.ok || !streamResponse.body) {
+        throw new Error(`Backend stream returned HTTP ${streamResponse.status}`);
+      }
 
-      source.addEventListener("log", (event) => {
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          level: RunEvent["level"];
-          message: string;
-        };
-        pushRunEvent({
-          kind: "log",
-          level: payload.level ?? "info",
-          message: payload.message,
-        });
-      });
+      const reader = streamResponse.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      source.addEventListener("done", (event) => {
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          state: "succeeded" | "failed";
-          message: string;
-        };
-        setRunState(payload.state);
-        pushRunEvent({
-          kind: "done",
-          level: payload.state === "succeeded" ? "success" : "error",
-          message: payload.message,
-        });
-        source.close();
-        eventSourceRef.current = null;
-      });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() ?? "";
 
-      source.onerror = () => {
-        setRunState("failed");
-        pushRunEvent({
-          kind: "error",
-          level: "error",
-          message: "Streaming connection failed. Check that the FastAPI backend is running.",
-        });
-        source.close();
-        eventSourceRef.current = null;
-      };
+        for (const chunk of chunks) {
+          handleStreamEvent(chunk);
+        }
+      }
+
+      if (buffer.trim()) {
+        handleStreamEvent(buffer);
+      }
+      streamControllerRef.current = null;
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
       setRunState("failed");
       pushRunEvent({
         kind: "error",
@@ -264,6 +261,59 @@ export default function DeployerConsole() {
           error instanceof Error
             ? error.message
             : "Unable to start the preview run.",
+      });
+    }
+  }
+
+  function handleStreamEvent(chunk: string) {
+    const lines = chunk.split("\n");
+    const eventType = lines
+      .find((line) => line.startsWith("event: "))
+      ?.slice("event: ".length);
+    const data = lines
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => line.slice("data: ".length))
+      .join("\n");
+
+    if (!eventType || !data) {
+      return;
+    }
+
+    if (eventType === "status") {
+      const payload = JSON.parse(data) as {
+        state: string;
+        step: string;
+      };
+      pushRunEvent({
+        kind: "status",
+        message: `Status: ${payload.state} · Step: ${payload.step}`,
+      });
+      return;
+    }
+
+    if (eventType === "log") {
+      const payload = JSON.parse(data) as {
+        level: RunEvent["level"];
+        message: string;
+      };
+      pushRunEvent({
+        kind: "log",
+        level: payload.level ?? "info",
+        message: payload.message,
+      });
+      return;
+    }
+
+    if (eventType === "done") {
+      const payload = JSON.parse(data) as {
+        state: "succeeded" | "failed";
+        message: string;
+      };
+      setRunState(payload.state);
+      pushRunEvent({
+        kind: "done",
+        level: payload.state === "succeeded" ? "success" : "error",
+        message: payload.message,
       });
     }
   }

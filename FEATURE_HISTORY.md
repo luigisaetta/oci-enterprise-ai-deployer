@@ -2,12 +2,50 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.1.0
-- **Last modified:** 2026-05-03
+- **Last modified:** 2026-05-05
 - **License:** MIT
 
 This document tracks the functional story of the deployer as features are added
 over time. It is intentionally more narrative than a release changelog: the goal
 is to keep a clear memory of why each capability was introduced.
+
+## 2026-05-05 - Web UI API Key Protection
+
+The Web UI and FastAPI backend now support an optional shared API key for
+development and trusted-network deployments.
+
+New capabilities:
+
+- Added `DEPLOYER_WEB_API_KEY` support to the FastAPI backend.
+- Protected Web UI API endpoints with the `X-API-Key` header when a backend key
+  is configured.
+- Kept local development backward-compatible when no API key is configured.
+- Added `NEXT_PUBLIC_DEPLOYER_API_KEY` support to the Next.js Web UI.
+- Replaced browser `EventSource` streaming with `fetch`-based streaming so the
+  API key is sent in headers instead of URL query parameters.
+- Added tests for missing, invalid, and valid API key requests.
+- Updated Linux Web UI deployment documentation with API key start commands.
+
+Example:
+
+```bash
+DEPLOYER_WEB_API_KEY='replace-with-a-long-random-value' \
+DEPLOYER_WEB_CORS_ORIGINS='*' \
+python -m uvicorn \
+  enterprise_ai_deployment.api:app \
+  --host 0.0.0.0 \
+  --port 8100
+```
+
+```bash
+NEXT_PUBLIC_DEPLOYER_API_KEY='replace-with-a-long-random-value' \
+NEXT_PUBLIC_DEPLOYER_API_URL=http://192.168.1.25:8100 \
+npm run dev -- --hostname 0.0.0.0
+```
+
+This is a lightweight protection mechanism for development or LAN usage. It is
+not intended to replace a production identity provider, because `NEXT_PUBLIC_`
+frontend values are visible to the browser.
 
 ## 2026-05-03 - Rollback to Immutable Image Tag
 

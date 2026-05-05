@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-05
 License: MIT
 
 Description:
@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import sys
 import tempfile
 import uuid
@@ -20,7 +21,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -94,6 +95,21 @@ def _get_cors_origins() -> list[str]:
     return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
+def _get_required_api_key() -> str | None:
+    """Return the configured web API key, when API protection is enabled."""
+    value = os.environ.get("DEPLOYER_WEB_API_KEY", "").strip()
+    return value or None
+
+
+def _verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Validate the optional shared key used by the Web UI."""
+    required_key = _get_required_api_key()
+    if required_key is None:
+        return
+    if x_api_key is None or not secrets.compare_digest(x_api_key, required_key):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI application."""
     app = FastAPI(title="OCI Enterprise AI Deployer API", version="0.1.0")
@@ -109,20 +125,24 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.post("/api/actions/preview", response_model=RunCreated)
+    @app.post(
+        "/api/actions/preview",
+        response_model=RunCreated,
+        dependencies=[Depends(_verify_api_key)],
+    )
     def create_preview_run(request: RunRequest) -> RunCreated:
         run_id = uuid.uuid4().hex
         RUNS[run_id] = StoredRun(run_id=run_id, **request.model_dump())
         return RunCreated(run_id=run_id)
 
-    @app.get("/api/runs/{run_id}")
+    @app.get("/api/runs/{run_id}", dependencies=[Depends(_verify_api_key)])
     def get_run(run_id: str) -> dict[str, object]:
         run = RUNS.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found")
         return asdict(run)
 
-    @app.get("/api/runs/{run_id}/events")
+    @app.get("/api/runs/{run_id}/events", dependencies=[Depends(_verify_api_key)])
     async def stream_run_events(run_id: str) -> StreamingResponse:
         run = RUNS.get(run_id)
         if run is None:

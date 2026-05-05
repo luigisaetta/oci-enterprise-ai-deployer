@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-04-30
+Last modified: 2026-05-05
 License: MIT
 
 Description:
@@ -55,6 +55,82 @@ def test_cors_origins_can_allow_all_clients(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_api_key_is_required_when_configured(monkeypatch) -> None:
+    """Protected API endpoints reject requests without the shared key."""
+    RUNS.clear()
+    monkeypatch.setenv("DEPLOYER_WEB_API_KEY", "test-key")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/actions/preview",
+        json={
+            "yaml": _valid_web_yaml(),
+            "env": "LOG_LEVEL=INFO\n",
+            "action": "validate",
+            "profile": "DEFAULT",
+            "region": "eu-frankfurt-1",
+            "output_dir": "generated",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid API key"
+
+
+def test_api_key_rejects_wrong_value(monkeypatch) -> None:
+    """Protected API endpoints reject requests with the wrong shared key."""
+    RUNS.clear()
+    monkeypatch.setenv("DEPLOYER_WEB_API_KEY", "test-key")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/actions/preview",
+        headers={"X-API-Key": "wrong-key"},
+        json={
+            "yaml": _valid_web_yaml(),
+            "env": "LOG_LEVEL=INFO\n",
+            "action": "validate",
+            "profile": "DEFAULT",
+            "region": "eu-frankfurt-1",
+            "output_dir": "generated",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid API key"
+
+
+def test_api_key_allows_preview_and_stream(monkeypatch) -> None:
+    """Protected API endpoints accept requests with the configured key."""
+    RUNS.clear()
+    monkeypatch.setenv("DEPLOYER_WEB_API_KEY", "test-key")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/actions/preview",
+        headers={"X-API-Key": "test-key"},
+        json={
+            "yaml": "application:\n  name: demo\n",
+            "env": "",
+            "action": "validate",
+            "profile": "DEFAULT",
+            "region": "eu-frankfurt-1",
+            "output_dir": "generated",
+        },
+    )
+
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+
+    stream_response = client.get(
+        f"/api/runs/{run_id}/events",
+        headers={"X-API-Key": "test-key"},
+    )
+
+    assert stream_response.status_code == 200
+    assert "event: done" in stream_response.text
 
 
 def test_create_preview_run_and_stream_validation_events(tmp_path, monkeypatch) -> None:

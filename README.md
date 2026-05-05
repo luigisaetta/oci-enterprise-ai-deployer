@@ -2,7 +2,7 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.1.0
-- **Last modified:** 2026-05-03
+- **Last modified:** 2026-05-05
 - **License:** MIT
 
 ![Black](https://img.shields.io/badge/code%20style-black-000000.svg)
@@ -162,6 +162,10 @@ If the backend runs elsewhere:
 NEXT_PUBLIC_DEPLOYER_API_URL=http://192.168.1.25:8000 \
 npm run dev -- --hostname 0.0.0.0
 ```
+
+When `DEPLOYER_WEB_API_KEY` is set for the API process, start the frontend with
+the same value in `NEXT_PUBLIC_DEPLOYER_API_KEY` so browser requests include the
+required `X-API-Key` header.
 
 Uploaded files do not preserve their original local path in the browser. For
 web validation, relative paths in YAML are resolved from the repository root.
