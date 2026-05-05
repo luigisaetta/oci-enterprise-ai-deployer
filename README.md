@@ -107,11 +107,8 @@ The deploy action in the web interface streams the same CLI `deploy` flow used
 from the terminal. A real deploy builds images, pushes them to OCIR, and creates
 or reuses OCI resources.
 
-Start the backend:
-
-```bash
-conda activate oci-enterprise-ai-deployer
-```
+Start the backend from the repository root. The commands below assume the
+`oci-enterprise-ai-deployer` Conda environment is already active.
 
 ```bash
 python -m uvicorn \
