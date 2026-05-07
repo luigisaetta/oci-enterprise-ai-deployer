@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-05
+Last modified: 2026-05-07
 License: MIT
 
 Description:
@@ -384,7 +384,11 @@ def ensure_ocir_repository(
         return
 
     _print_oci_command("Create OCIR Repository", create_command)
-    _run_oci_command(create_command, "create-ocir-repository")
+    _run_create_ocir_repository_command(
+        create_command,
+        repository_name,
+        context.config.application.compartment_id,
+    )
 
 
 def build_ocir_repository_name(deployment: DeploymentUnitConfig) -> str:
@@ -671,6 +675,48 @@ def _run_oci_command(
         phase,
         "Verify OCI CLI configuration, IAM policies, compartment, and generated JSON payloads.",
         pretty_json_stdout=True,
+    )
+
+
+def _run_create_ocir_repository_command(
+    command: list[str], repository_name: str, compartment_id: str
+) -> subprocess.CompletedProcess[str]:
+    """Create an OCIR repository and report tenancy-wide name conflicts clearly."""
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.stdout:
+        print(_pretty_json(result.stdout))
+    if result.stderr:
+        print(result.stderr.strip())
+    if result.returncode == 0:
+        return result
+    if _is_ocir_repository_name_conflict(result):
+        raise RuntimeError(
+            "create-ocir-repository failed. OCIR repository "
+            f"{repository_name!r} cannot be created in compartment "
+            f"{compartment_id!r} because a repository with the same name already "
+            "exists in another compartment in this tenancy. OCIR repository names "
+            "are unique across all compartments in a tenancy. Use a different "
+            "container.image_repository value, move or reuse the existing "
+            "repository intentionally, or update the deployment target."
+        )
+    raise RuntimeError(
+        "create-ocir-repository failed. Verify OCI CLI configuration, IAM "
+        "policies, compartment, and generated JSON payloads."
+    )
+
+
+def _is_ocir_repository_name_conflict(
+    result: subprocess.CompletedProcess[str],
+) -> bool:
+    """Return True when OCI reports a repository-name conflict."""
+    output = f"{result.stdout}\n{result.stderr}".lower()
+    conflict_markers = ("409", "conflict")
+    repository_markers = ("repository", "display-name", "display name")
+    existence_markers = ("already exist", "already-exist", "already_exists")
+    return (
+        any(marker in output for marker in conflict_markers)
+        and any(marker in output for marker in repository_markers)
+        and any(marker in output for marker in existence_markers)
     )
 
 
