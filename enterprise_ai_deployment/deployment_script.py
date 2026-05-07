@@ -10,10 +10,13 @@ Description:
 
 from __future__ import annotations
 
+import argparse
+import json
 import shlex
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -101,9 +104,10 @@ def _render_command_block(item: DeploymentScriptCommand) -> list[str]:
     if item.capture_stdout is not None:
         lines.extend(
             [
-                "HOSTED_APPLICATION_ID=$(python3 -c "
-                + shlex.quote(_HOSTED_APPLICATION_ID_EXTRACTOR)
-                + f" {shlex.quote(str(item.capture_stdout))})",
+                "HOSTED_APPLICATION_ID=$(python3 -m "
+                "enterprise_ai_deployment.deployment_script "
+                "extract-hosted-application-id "
+                f"{shlex.quote(str(item.capture_stdout))})",
                 'echo "Hosted Application ID: ${HOSTED_APPLICATION_ID}"',
             ]
         )
@@ -111,40 +115,64 @@ def _render_command_block(item: DeploymentScriptCommand) -> list[str]:
     return lines
 
 
-_HOSTED_APPLICATION_ID_EXTRACTOR = r"""
-import json
-import sys
+def extract_hosted_application_id(response_path: str | Path) -> str:
+    """Extract a Hosted Application OCID from an OCI CLI create response file."""
+    path = Path(response_path).expanduser()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    resource_id = _find_ocid(
+        payload,
+        preferred_keys=("identifier", "resourceId", "resource-id", "id"),
+        ocid_prefix="ocid1.generativeaihostedapplication.",
+    )
+    if not resource_id:
+        raise RuntimeError("Hosted Application OCID not found in OCI CLI response.")
+    return resource_id
 
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as file:
-    payload = json.load(file)
 
-prefix = "ocid1.generativeaihostedapplication."
-preferred_keys = ("identifier", "resourceId", "resource-id", "id")
+def main(argv: list[str] | None = None) -> int:
+    """Run helper commands used by generated deployment scripts."""
+    parser = argparse.ArgumentParser(
+        description="Helpers for generated OCI Enterprise AI deployment scripts."
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    extract_parser = subparsers.add_parser("extract-hosted-application-id")
+    extract_parser.add_argument("response_path")
+    args = parser.parse_args(argv)
+
+    if args.command == "extract-hosted-application-id":
+        try:
+            print(extract_hosted_application_id(args.response_path))
+            return 0
+        except (OSError, json.JSONDecodeError, RuntimeError) as exc:
+            print(f"Error: {exc}")
+            return 1
+    return 1
 
 
-def find_ocid(value):
-    if isinstance(value, str) and value.startswith(prefix):
+def _find_ocid(
+    value: Any,
+    preferred_keys: tuple[str, ...],
+    ocid_prefix: str,
+) -> str | None:
+    """Find the first matching OCI resource identifier in nested JSON."""
+    if isinstance(value, str) and value.startswith(ocid_prefix):
         return value
     if isinstance(value, dict):
         for key in preferred_keys:
-            found = find_ocid(value.get(key))
+            found = _find_ocid(value.get(key), preferred_keys, ocid_prefix)
             if found:
                 return found
         for child in value.values():
-            found = find_ocid(child)
+            found = _find_ocid(child, preferred_keys, ocid_prefix)
             if found:
                 return found
     if isinstance(value, list):
         for child in value:
-            found = find_ocid(child)
+            found = _find_ocid(child, preferred_keys, ocid_prefix)
             if found:
                 return found
     return None
 
 
-resource_id = find_ocid(payload)
-if not resource_id:
-    raise SystemExit("Hosted Application OCID not found in OCI CLI response.")
-print(resource_id)
-""".strip()
+if __name__ == "__main__":
+    raise SystemExit(main())

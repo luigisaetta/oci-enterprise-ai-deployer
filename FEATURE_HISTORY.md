@@ -9,6 +9,26 @@ This document tracks the functional story of the deployer as features are added
 over time. It is intentionally more narrative than a release changelog: the goal
 is to keep a clear memory of why each capability was introduced.
 
+## 2026-05-07 - Dry-run Deploy Script Export
+
+Dry-run review can now produce an executable shell script containing the same
+deployment commands and generated JSON references shown by the CLI and Web UI.
+
+New capabilities:
+
+- Added `--script-file <path>` to export generated deploy commands as a
+  Linux/macOS executable `.sh` file.
+- Integrated script generation into the Web UI dry-run flow without adding a new
+  action to the UI menu.
+- Added a Web API endpoint for downloading the generated `deploy.sh` after a
+  successful dry-run.
+- Kept generated scripts and JSON artifacts under ignored output directories so
+  operational artifacts are not committed accidentally.
+- Reused a package helper command,
+  `python3 -m enterprise_ai_deployment.deployment_script
+  extract-hosted-application-id`, to extract the Hosted Application OCID from
+  OCI CLI output instead of embedding Python source inside the shell script.
+
 ## 2026-05-05 - Version 0.9.0
 
 Version 0.9.0 marks the project as ready for broader validation of the full

@@ -21,6 +21,7 @@ from enterprise_ai_deployment.deployment_config import (
     load_deployment_config,
 )
 from enterprise_ai_deployment.deployment_renderer import render_artifacts
+from enterprise_ai_deployment.deployment_script import extract_hosted_application_id
 from enterprise_ai_deployment.deployment_runner import format_command, main
 from enterprise_ai_deployment.deployment_validation import (
     DeploymentValidationError,
@@ -881,8 +882,35 @@ def test_deploy_script_file_writes_executable_shell_script(
     assert "hosted-application create" in script
     assert "file://" in script
     assert "create-hosted-application-response.json" in script
+    assert "python3 -m enterprise_ai_deployment.deployment_script" in script
+    assert "extract-hosted-application-id" in script
+    assert "python3 -c" not in script
     assert "--hosted-application-id $HOSTED_APPLICATION_ID" in script
     assert "hosted-deployment create-hosted-deployment-single-docker-artifact" in script
+
+
+def test_extract_hosted_application_id_reads_oci_create_response(tmp_path) -> None:
+    """Generated scripts reuse the package helper for Hosted Application OCIDs."""
+    response_path = tmp_path / "create-response.json"
+    response_path.write_text(
+        json.dumps(
+            {
+                "data": {
+                    "id": "ocid1.workrequest.oc1..createapp",
+                    "identifier": (
+                        "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..app"
+                    ),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    hosted_application_id = extract_hosted_application_id(response_path)
+
+    assert hosted_application_id == (
+        "ocid1.generativeaihostedapplication.oc1.eu-frankfurt-1..app"
+    )
 
 
 def test_deploy_creates_application_then_deployment(tmp_path, monkeypatch) -> None:
