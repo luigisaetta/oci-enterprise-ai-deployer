@@ -22,6 +22,9 @@ New capabilities:
   action to the UI menu.
 - Added a Web API endpoint for downloading the generated `deploy.sh` after a
   successful dry-run.
+- Resolved `ocir_namespace: auto` during dry-run script generation so exported
+  `deploy.sh` files contain the real OCIR namespace instead of the preview
+  placeholder.
 - Kept generated scripts and JSON artifacts under ignored output directories so
   operational artifacts are not committed accidentally.
 - Reused a package helper command,

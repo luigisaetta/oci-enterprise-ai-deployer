@@ -177,6 +177,8 @@ Expected behavior of `--dry-run`:
 - does not run `docker push`
 - does not call OCI CLI to create or update resources
 - may call non-invasive local commands, if needed, to validate prerequisites
+- may call read-only OCI lookup commands, such as `oci os ns get`, when required
+  to make generated artifacts or exported scripts directly executable
 - assumes Docker login to the target OCIR registry has already been completed;
   `validate` checks the local Docker configuration and reports a missing login
 - prints the commands that would be executed

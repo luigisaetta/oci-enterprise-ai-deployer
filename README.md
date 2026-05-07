@@ -234,6 +234,9 @@ python oci_ai_deploy.py \
   deploy
 ```
 
+When the YAML uses `ocir_namespace: auto`, script export resolves the real OCIR
+namespace with `oci os ns get` before writing `deploy.sh`.
+
 Rollback to a previous immutable image tag creates a new Hosted Deployment
 attached to the existing Hosted Application:
 

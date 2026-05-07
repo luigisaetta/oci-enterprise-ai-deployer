@@ -806,7 +806,10 @@ def test_deploy_dry_run_renders_application_and_deployment_commands(
         captured.out
     )
     assert "--hosted-application-id '<created-hosted-application-id>'" in captured.out
-    assert "Dry run: no OCI commands were executed." in captured.out
+    assert (
+        "Dry run: no Docker build/push or OCI resource mutation commands were executed."
+        in captured.out
+    )
 
 
 def test_deploy_accepts_dry_run_after_subcommand(tmp_path, monkeypatch, capsys) -> None:
@@ -835,7 +838,10 @@ def test_deploy_accepts_dry_run_after_subcommand(tmp_path, monkeypatch, capsys) 
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "Dry run: no OCI commands were executed." in captured.out
+    assert (
+        "Dry run: no Docker build/push or OCI resource mutation commands were executed."
+        in captured.out
+    )
 
 
 def test_deploy_script_file_writes_executable_shell_script(
@@ -848,10 +854,20 @@ def test_deploy_script_file_writes_executable_shell_script(
     config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
     script_path = tmp_path / "generated" / "deploy.sh"
 
-    def fail_run(*_args, **_kwargs):
-        raise AssertionError("subprocess.run must not be called in dry-run mode")
+    calls = []
 
-    monkeypatch.setattr(subprocess, "run", fail_run)
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[-3:] == ["os", "ns", "get"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": "mytenancy"}),
+                stderr="",
+            )
+        raise AssertionError(f"unexpected command in dry-run mode: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     exit_code = main(
         [
@@ -870,11 +886,25 @@ def test_deploy_script_file_writes_executable_shell_script(
     script = script_path.read_text(encoding="utf-8")
 
     assert exit_code == 0
+    assert calls == [
+        [
+            "oci",
+            "--region",
+            "eu-frankfurt-1",
+            "--output",
+            "json",
+            "os",
+            "ns",
+            "get",
+        ]
+    ]
     assert "Generated executable deploy script:" in captured.out
     assert script_path.stat().st_mode & stat.S_IXUSR
     assert script.startswith("#!/usr/bin/env bash\n")
     assert "set -euo pipefail" in script
     assert "docker build --platform linux/amd64" in script
+    assert "fra.ocir.io/mytenancy/ai-agents/demo-agent:20260429" in script
+    assert "<resolved-ocir-namespace>" not in script
     assert (
         "oci --region eu-frankfurt-1 --output json artifacts container "
         "repository create"
@@ -1323,7 +1353,10 @@ def test_rollback_dry_run_creates_deployment_with_requested_tag(
     assert "demo-agent:previous-tag" in captured.out
     assert "--hosted-application-id '<existing-hosted-application-id>'" in captured.out
     assert "--active-artifact-tag previous-tag" in captured.out
-    assert "Dry run: no OCI commands were executed." in captured.out
+    assert (
+        "Dry run: no Docker build/push or OCI resource mutation commands were executed."
+        in captured.out
+    )
 
 
 def test_rollback_creates_new_deployment_for_existing_application(

@@ -167,7 +167,9 @@ def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -
     response = client.post(
         "/api/runs",
         json={
-            "yaml": _valid_web_yaml(),
+            "yaml": _valid_web_yaml().replace(
+                "ocir_namespace: auto", "ocir_namespace: mytenancy"
+            ),
             "env": "LOG_LEVEL=INFO\n",
             "action": "dry-run",
             "profile": "DEFAULT",
@@ -192,7 +194,10 @@ def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -
     assert "Generated executable deploy script:" in body
     assert "deploy.sh" in body
     assert "docker build --platform linux/amd64" in body
-    assert "Dry run: no OCI commands were executed." in body
+    assert (
+        "Dry run: no Docker build/push or OCI resource mutation commands were executed."
+        in body
+    )
     assert "CLI dry-run completed successfully." in body
     assert (output_dir / "deploy.sh").exists()
 
@@ -200,6 +205,8 @@ def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -
 
     assert script_response.status_code == 200
     assert script_response.headers["content-type"].startswith("text/x-shellscript")
+    assert "fra.ocir.io/mytenancy/ai-agents/demo-agent:dev" in script_response.text
+    assert "<resolved-ocir-namespace>" not in script_response.text
     assert "hosted-deployment create-hosted-deployment-single-docker-artifact" in (
         script_response.text
     )

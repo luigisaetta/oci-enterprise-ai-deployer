@@ -209,7 +209,10 @@ def _run_deploy_command(context: DeploymentContext, args: argparse.Namespace) ->
     for deployment_context in context.deployments:
         _run_single_deployment(context, deployment_context, args)
     if args.dry_run:
-        print("Dry run: no OCI commands were executed.")
+        print(
+            "Dry run: no Docker build/push or OCI resource mutation commands "
+            "were executed."
+        )
 
 
 def _run_rollback_command(context: DeploymentContext, args: argparse.Namespace) -> None:
@@ -218,7 +221,10 @@ def _run_rollback_command(context: DeploymentContext, args: argparse.Namespace) 
     for deployment_context in context.deployments:
         _run_single_rollback(context, deployment_context, args)
     if args.dry_run:
-        print("Dry run: no OCI commands were executed.")
+        print(
+            "Dry run: no Docker build/push or OCI resource mutation commands "
+            "were executed."
+        )
 
 
 def _run_single_rollback(
@@ -829,9 +835,21 @@ def _run_process_command(
     phase: str,
     failure_hint: str,
     pretty_json_stdout: bool = False,
+    timeout_seconds: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run one subprocess command and print captured output."""
-    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"{phase} timed out after {timeout_seconds} seconds. {failure_hint}"
+        ) from exc
     if result.stdout:
         print(
             _pretty_json(result.stdout) if pretty_json_stdout else result.stdout.strip()
@@ -847,6 +865,8 @@ def _needs_runtime_image_reference(args: argparse.Namespace) -> bool:
     """Return True when the command needs a Docker/OCIR image URI to execute."""
     if args.command == "create-deployment" and not args.hosted_application_id:
         return False
+    if args.command == "deploy" and args.dry_run and getattr(args, "script_file", None):
+        return True
     return not args.dry_run and args.command in {
         "build",
         "push",
@@ -860,7 +880,13 @@ def _resolve_ocir_namespace(cli_config: OciCliConfig) -> str:
     """Resolve the current tenancy namespace through OCI CLI."""
     command = _build_get_ocir_namespace_command(cli_config)
     _print_oci_command("Resolve OCIR Namespace", command)
-    result = _run_oci_command(command, "resolve-ocir-namespace")
+    result = _run_process_command(
+        command,
+        "resolve-ocir-namespace",
+        "Verify OCI CLI configuration, network access, IAM policies, and region.",
+        pretty_json_stdout=True,
+        timeout_seconds=30,
+    )
     namespace = _extract_namespace(result.stdout)
     if not namespace:
         raise RuntimeError(
