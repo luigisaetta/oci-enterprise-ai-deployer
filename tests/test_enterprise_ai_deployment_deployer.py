@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-03
+Last modified: 2026-05-07
 License: MIT
 
 Description:
@@ -649,6 +649,64 @@ def test_push_resolves_namespace_and_runs_docker_push(tmp_path, monkeypatch) -> 
         ],
         ["docker", "push", "fra.ocir.io/mytenancy/ai-agents/demo-agent:20260429"],
     ]
+
+
+def test_push_reports_ocir_repository_name_conflict(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """OCIR repository create conflicts explain tenancy-wide name uniqueness."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+    calls = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[-3:] == ["os", "ns", "get"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": "mytenancy"}),
+                stderr="",
+            )
+        if "repository" in command and "list" in command:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"data": {"items": []}}),
+                stderr="",
+            )
+        if "repository" in command and "create" in command:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="",
+                stderr=(
+                    "ServiceError: 409 Conflict. Container repository with "
+                    "display-name ai-agents/demo-agent already exists."
+                ),
+            )
+        if command[:2] == ["docker", "push"]:
+            raise AssertionError("docker push should not run after OCIR conflict")
+        raise AssertionError(f"unexpected command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "push",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "already exists in another compartment" in captured.out
+    assert "OCIR repository names are unique across all compartments" in captured.out
+    assert len(calls) == 3
 
 
 def test_validate_rejects_unsupported_auth_type(tmp_path, monkeypatch) -> None:
