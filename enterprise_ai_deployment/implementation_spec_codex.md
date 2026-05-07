@@ -79,6 +79,8 @@ IAM policies and working OCI permissions are external prerequisites. They must b
 - The OCI CLI is the operational engine in version 1.
 - Python orchestrates the flow and calls Docker and the OCI CLI through `subprocess`.
 - Every command must be usable in CI/CD.
+- Deployment command plans may be exported to an executable POSIX shell script
+  for Linux and macOS review or handoff.
 - Every destructive or expensive operation must be visible in `dry run`.
 - The tool must not print secrets.
 - Errors must be readable and actionable.
@@ -165,6 +167,7 @@ Required global parameters:
 --dry-run
 --non-interactive
 --output-dir <path>
+--script-file <path>
 --verbose
 ```
 
@@ -178,6 +181,8 @@ Expected behavior of `--dry-run`:
   `validate` checks the local Docker configuration and reports a missing login
 - prints the commands that would be executed
 - generates intermediate JSON files in the output directory, if requested
+- when `--script-file` is provided with `deploy`, writes an executable `.sh`
+  script containing the generated deploy commands and JSON file references
 - masks secrets and sensitive values
 - returns exit code `0` if configuration is valid and the plan can be built
 
@@ -527,6 +532,8 @@ Acceptance criteria:
 
 - `deploy` runs phases in the correct order
 - `deploy --dry-run` shows all phases without remote side effects
+- `deploy --script-file generated/deploy.sh` writes an executable shell script
+  after JSON artifacts and deploy commands are generated
 - an error stops the flow with a clear message
 - the final report is produced when possible
 - tests verify phase ordering through mocks

@@ -23,7 +23,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from enterprise_ai_deployment.compartments import resolve_deployment_config_compartment
@@ -83,6 +83,7 @@ class ValidationResult:
 
 
 RUNS: dict[str, StoredRun] = {}
+DEPLOY_SCRIPTS: dict[str, Path] = {}
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -130,6 +131,7 @@ def create_app() -> FastAPI:
     def _create_action_run(request: RunRequest) -> RunCreated:
         run_id = uuid.uuid4().hex
         RUNS[run_id] = StoredRun(run_id=run_id, **request.model_dump())
+        DEPLOY_SCRIPTS.pop(run_id, None)
         return RunCreated(run_id=run_id)
 
     @app.post(
@@ -168,6 +170,27 @@ def create_app() -> FastAPI:
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
             },
+        )
+
+    @app.get(
+        "/api/runs/{run_id}/deploy-script",
+        dependencies=[Depends(_verify_api_key)],
+    )
+    def get_deploy_script(run_id: str) -> FileResponse:
+        run = RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if run.action != "dry-run":
+            raise HTTPException(status_code=404, detail="Deploy script not available")
+        script_path = DEPLOY_SCRIPTS.get(run_id)
+        if script_path is None:
+            raise HTTPException(status_code=404, detail="Deploy script not available")
+        if not script_path.exists():
+            raise HTTPException(status_code=404, detail="Deploy script not available")
+        return FileResponse(
+            script_path,
+            media_type="text/x-shellscript",
+            filename=script_path.name,
         )
 
     return app
@@ -261,6 +284,7 @@ async def _fake_run_event_stream(run: StoredRun):
             success_message="CLI dry-run completed successfully.",
             failure_message="CLI dry-run failed",
             dry_run=True,
+            script_file=_dry_run_script_path(run),
         ):
             yield event
         return
@@ -370,6 +394,7 @@ async def _stream_cli_command(
     success_message: str,
     failure_message: str,
     dry_run: bool,
+    script_file: Path | None = None,
 ):
     """Run a real CLI command and stream its output as SSE."""
     repo_root = Path.cwd()
@@ -411,6 +436,8 @@ async def _stream_cli_command(
             "--profile",
             run.profile,
         ]
+        if script_file is not None:
+            command.extend(["--script-file", str(script_file)])
         if dry_run:
             command.append("--dry-run")
         command.append(cli_command)
@@ -453,6 +480,8 @@ async def _stream_cli_command(
 
         return_code = await process.wait()
         if return_code == 0:
+            if script_file is not None and script_file.exists():
+                DEPLOY_SCRIPTS[run.run_id] = script_file
             yield _to_sse(
                 "done",
                 {
@@ -493,6 +522,14 @@ def _cli_log_level(message: str) -> str:
     if OCI_WAIT_WARNING in message:
         return "warning"
     return "info"
+
+
+def _dry_run_script_path(run: StoredRun) -> Path:
+    """Return the deploy script path generated for a web dry-run."""
+    output_dir = Path(run.output_dir).expanduser()
+    if not output_dir.is_absolute():
+        output_dir = Path.cwd() / output_dir
+    return output_dir / "deploy.sh"
 
 
 def _to_sse(event_name: str, payload: dict[str, str]) -> str:

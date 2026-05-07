@@ -162,6 +162,7 @@ def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -
     RUNS.clear()
     _set_docker_login(tmp_path, monkeypatch)
     client = TestClient(create_app())
+    output_dir = tmp_path / "generated"
 
     response = client.post(
         "/api/runs",
@@ -171,7 +172,7 @@ def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -
             "action": "dry-run",
             "profile": "DEFAULT",
             "region": "eu-frankfurt-1",
-            "output_dir": "generated",
+            "output_dir": str(output_dir),
         },
     )
 
@@ -188,9 +189,20 @@ def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -
     assert "passed real backend validation." in body
     assert "Docker login detected for target OCIR registry fra.ocir.io." in body
     assert "Deployment plan:" in body
+    assert "Generated executable deploy script:" in body
+    assert "deploy.sh" in body
     assert "docker build --platform linux/amd64" in body
     assert "Dry run: no OCI commands were executed." in body
     assert "CLI dry-run completed successfully." in body
+    assert (output_dir / "deploy.sh").exists()
+
+    script_response = client.get(f"/api/runs/{run_id}/deploy-script")
+
+    assert script_response.status_code == 200
+    assert script_response.headers["content-type"].startswith("text/x-shellscript")
+    assert "hosted-deployment create-hosted-deployment-single-docker-artifact" in (
+        script_response.text
+    )
 
 
 def test_action_run_streams_validation_failure() -> None:
@@ -474,12 +486,15 @@ def test_cli_streamer_runs_python_unbuffered(monkeypatch) -> None:
                 success_message="done",
                 failure_message="failed",
                 dry_run=False,
+                script_file=Path("generated/deploy.sh"),
             )
         ]
 
     events = asyncio.run(collect_events())
 
     assert seen["command"][1] == "-u"
+    assert "--script-file" in seen["command"]
+    assert "generated/deploy.sh" in seen["command"]
     assert seen["env"]["PYTHONUNBUFFERED"] == "1"
     assert any("live line" in event for event in events)
     assert any('"level": "warning"' in event for event in events)

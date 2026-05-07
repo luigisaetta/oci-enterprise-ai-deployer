@@ -572,6 +572,35 @@ button:disabled {
   color: #991b1b;
 }
 
+.scriptButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  margin-top: 10px;
+  border: 1px solid rgba(34, 113, 84, 0.22);
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.scriptButton:hover {
+  background: #dcfce7;
+}
+
+.artifactPath {
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  color: #4d5b53;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, ui-monospace,
+    monospace;
+  font-size: 12px;
+}
+
 .runLog {
   display: grid;
   align-content: start;

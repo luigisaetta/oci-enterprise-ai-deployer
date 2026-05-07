@@ -40,6 +40,11 @@ from enterprise_ai_deployment.deployment_renderer import (
     RenderedArtifacts,
     render_artifacts,
 )
+from enterprise_ai_deployment.deployment_script import (
+    DeploymentScriptCommand,
+    RawShellArg,
+    write_deployment_script,
+)
 from enterprise_ai_deployment.deployment_validation import (
     DeploymentValidationError,
     validate_deployment_config,
@@ -88,6 +93,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--script-file",
+        help="Optional executable .sh file that captures the generated deploy commands.",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command_name in (
@@ -118,6 +127,7 @@ def _add_common_subcommand_options(parser: argparse.ArgumentParser) -> None:
         "--non-interactive", action="store_true", default=argparse.SUPPRESS
     )
     parser.add_argument("--verbose", action="store_true", default=argparse.SUPPRESS)
+    parser.add_argument("--script-file", default=argparse.SUPPRESS)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -166,6 +176,7 @@ def run_command(args: argparse.Namespace) -> int:
     elif args.command == "create-deployment":
         _run_create_deployment_command(context, args)
     elif args.command == "deploy":
+        _write_deploy_script_if_requested(context, args)
         _run_deploy_command(context, args)
     elif args.command == "rollback":
         _run_rollback_command(context, args)
@@ -423,35 +434,8 @@ def create_hosted_application(
             )
             return existing_hosted_application_id
 
-    artifacts = deployment_context.artifacts
-    command = build_create_hosted_application_command(
-        _context_oci_cli_config(context, args),
-        HostedApplicationCreateRequest(
-            display_name=deployment.hosted_application.display_name,
-            compartment_id=config.application.compartment_id,
-            description=deployment.hosted_application.description,
-            json_options=HostedApplicationJsonOptions(
-                scaling_config=(
-                    str(artifacts.scaling_config) if artifacts.scaling_config else None
-                ),
-                inbound_auth_config=(
-                    str(artifacts.inbound_auth_config)
-                    if artifacts.inbound_auth_config
-                    else None
-                ),
-                networking_config=(
-                    str(artifacts.networking_config)
-                    if artifacts.networking_config
-                    else None
-                ),
-                environment_variables=(
-                    str(artifacts.environment_variables)
-                    if artifacts.environment_variables
-                    else None
-                ),
-            ),
-            wait=deployment.hosted_deployment.wait_for_state is not None,
-        ),
+    command = _build_create_hosted_application_command(
+        context, args, deployment_context
     )
     _print_oci_command("Create Hosted Application", command)
     if args.dry_run:
@@ -478,19 +462,9 @@ def create_hosted_deployment(
     deployment_context: DeploymentExecutionContext | None = None,
 ) -> str:
     """Create the Hosted Deployment through OCI CLI, or print it in dry-run mode."""
-    config = context.config
     deployment_context = deployment_context or context.first
-    deployment = deployment_context.deployment
-    command = build_create_hosted_deployment_command(
-        _context_oci_cli_config(context, args),
-        HostedDeploymentCreateRequest(
-            hosted_application_id=hosted_application_id,
-            display_name=deployment.hosted_deployment.display_name,
-            compartment_id=config.application.compartment_id,
-            container_uri=deployment_context.image_reference.container_uri,
-            artifact_tag=deployment_context.image_reference.tag,
-            wait=deployment.hosted_deployment.wait_for_state is not None,
-        ),
+    command = _build_create_hosted_deployment_command(
+        context, args, hosted_application_id, deployment_context
     )
     _print_oci_command("Create Hosted Deployment", command)
     if args.dry_run:
@@ -499,6 +473,136 @@ def create_hosted_deployment(
 
     result = _run_oci_command(command, "create-deployment")
     return _extract_resource_id(result.stdout) or ""
+
+
+def _build_create_hosted_application_command(
+    context: DeploymentContext,
+    args: argparse.Namespace,
+    deployment_context: DeploymentExecutionContext,
+) -> list[str]:
+    """Build the Hosted Application create command for a deployment context."""
+    if deployment_context.artifacts is None:
+        raise RuntimeError(
+            "Artifacts must be rendered before creating a Hosted Application."
+        )
+    artifacts = deployment_context.artifacts
+    deployment = deployment_context.deployment
+    return build_create_hosted_application_command(
+        _context_oci_cli_config(context, args),
+        HostedApplicationCreateRequest(
+            display_name=deployment.hosted_application.display_name,
+            compartment_id=context.config.application.compartment_id,
+            description=deployment.hosted_application.description,
+            json_options=HostedApplicationJsonOptions(
+                scaling_config=(
+                    str(artifacts.scaling_config) if artifacts.scaling_config else None
+                ),
+                inbound_auth_config=(
+                    str(artifacts.inbound_auth_config)
+                    if artifacts.inbound_auth_config
+                    else None
+                ),
+                networking_config=(
+                    str(artifacts.networking_config)
+                    if artifacts.networking_config
+                    else None
+                ),
+                environment_variables=(
+                    str(artifacts.environment_variables)
+                    if artifacts.environment_variables
+                    else None
+                ),
+            ),
+            wait=deployment.hosted_deployment.wait_for_state is not None,
+        ),
+    )
+
+
+def _build_create_hosted_deployment_command(
+    context: DeploymentContext,
+    args: argparse.Namespace,
+    hosted_application_id: str,
+    deployment_context: DeploymentExecutionContext,
+) -> list[str]:
+    """Build the Hosted Deployment create command for a deployment context."""
+    deployment = deployment_context.deployment
+    return build_create_hosted_deployment_command(
+        _context_oci_cli_config(context, args),
+        HostedDeploymentCreateRequest(
+            hosted_application_id=hosted_application_id,
+            display_name=deployment.hosted_deployment.display_name,
+            compartment_id=context.config.application.compartment_id,
+            container_uri=deployment_context.image_reference.container_uri,
+            artifact_tag=deployment_context.image_reference.tag,
+            wait=deployment.hosted_deployment.wait_for_state is not None,
+        ),
+    )
+
+
+def _write_deploy_script_if_requested(
+    context: DeploymentContext, args: argparse.Namespace
+) -> None:
+    """Write a deployment shell script when requested by the caller."""
+    script_file = getattr(args, "script_file", None)
+    if not script_file:
+        return
+    commands: list[DeploymentScriptCommand] = []
+    for deployment_context in context.deployments:
+        output_dir = _deployment_output_dir(
+            args.output_dir, context.config, deployment_context.deployment
+        )
+        commands.extend(
+            [
+                DeploymentScriptCommand(
+                    title=f"Build container image: {deployment_context.deployment.name}",
+                    command=tuple(
+                        build_docker_build_command(context, deployment_context)
+                    ),
+                ),
+                DeploymentScriptCommand(
+                    title=f"Create OCIR repository: {deployment_context.deployment.name}",
+                    command=tuple(
+                        build_create_container_repository_command(
+                            _context_oci_cli_config(context, args),
+                            context.config.application.compartment_id,
+                            build_ocir_repository_name(deployment_context.deployment),
+                        )
+                    ),
+                ),
+                DeploymentScriptCommand(
+                    title=f"Push container image: {deployment_context.deployment.name}",
+                    command=tuple(build_docker_push_command(deployment_context)),
+                ),
+                DeploymentScriptCommand(
+                    title=f"Create Hosted Application: {deployment_context.deployment.name}",
+                    command=tuple(
+                        _build_create_hosted_application_command(
+                            context, args, deployment_context
+                        )
+                    ),
+                    capture_stdout=output_dir
+                    / "create-hosted-application-response.json",
+                ),
+                DeploymentScriptCommand(
+                    title=f"Create Hosted Deployment: {deployment_context.deployment.name}",
+                    command=tuple(
+                        (
+                            RawShellArg("$HOSTED_APPLICATION_ID")
+                            if arg == "<created-hosted-application-id>"
+                            else arg
+                        )
+                        for arg in _build_create_hosted_deployment_command(
+                            context,
+                            args,
+                            "<created-hosted-application-id>",
+                            deployment_context,
+                        )
+                    ),
+                ),
+            ]
+        )
+    path = write_deployment_script(script_file, commands)
+    print(f"Generated executable deploy script: {path}")
 
 
 def _prepare_context(args: argparse.Namespace, render: bool) -> DeploymentContext:

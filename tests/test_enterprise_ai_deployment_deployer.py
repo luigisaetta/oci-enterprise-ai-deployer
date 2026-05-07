@@ -11,6 +11,7 @@ Description:
 from __future__ import annotations
 
 import json
+import stat
 import subprocess
 
 import pytest
@@ -834,6 +835,54 @@ def test_deploy_accepts_dry_run_after_subcommand(tmp_path, monkeypatch, capsys) 
 
     assert exit_code == 0
     assert "Dry run: no OCI commands were executed." in captured.out
+
+
+def test_deploy_script_file_writes_executable_shell_script(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Deploy can export generated JSON-backed commands to an executable script."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+    script_path = tmp_path / "generated" / "deploy.sh"
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("subprocess.run must not be called in dry-run mode")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(tmp_path / "generated"),
+            "--script-file",
+            str(script_path),
+            "--dry-run",
+            "deploy",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    script = script_path.read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    assert "Generated executable deploy script:" in captured.out
+    assert script_path.stat().st_mode & stat.S_IXUSR
+    assert script.startswith("#!/usr/bin/env bash\n")
+    assert "set -euo pipefail" in script
+    assert "docker build --platform linux/amd64" in script
+    assert (
+        "oci --region eu-frankfurt-1 --output json artifacts container "
+        "repository create"
+    ) in script
+    assert "hosted-application create" in script
+    assert "file://" in script
+    assert "create-hosted-application-response.json" in script
+    assert "--hosted-application-id $HOSTED_APPLICATION_ID" in script
+    assert "hosted-deployment create-hosted-deployment-single-docker-artifact" in script
 
 
 def test_deploy_creates_application_then_deployment(tmp_path, monkeypatch) -> None:

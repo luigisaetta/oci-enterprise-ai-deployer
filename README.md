@@ -221,6 +221,19 @@ python oci_ai_deploy.py \
   deploy
 ```
 
+To save the generated deployment commands and JSON-backed OCI CLI calls as an
+executable Linux/macOS shell script:
+
+```bash
+python oci_ai_deploy.py \
+  --config enterprise_ai_deployment/examples/enterprise_solution_dev.yaml \
+  --env-file enterprise_ai_deployment/examples/agent_dev.env.local \
+  --output-dir enterprise_ai_deployment/generated \
+  --script-file enterprise_ai_deployment/generated/deploy.sh \
+  --dry-run \
+  deploy
+```
+
 Rollback to a previous immutable image tag creates a new Hosted Deployment
 attached to the existing Hosted Application:
 

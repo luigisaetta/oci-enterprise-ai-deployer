@@ -942,6 +942,8 @@ Main responsibilities:
 - generate intermediate JSON files for OCI CLI
 - support `dry-run` mode
 - call OCI CLI
+- optionally export the generated deployment command plan to an executable
+  Linux/macOS shell script
 - handle errors
 - print readable final output
 - produce final report
@@ -981,6 +983,7 @@ Goal:
 - support validation
 - support intermediate JSON generation
 - support `dry-run` mode
+- support executable shell script export for generated deployment commands
 - support non-interactive mode for CI/CD
 
 ### Version 2

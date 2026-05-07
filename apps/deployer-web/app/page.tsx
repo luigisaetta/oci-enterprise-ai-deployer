@@ -10,6 +10,7 @@
 import {
   CheckCircle2,
   ChevronDown,
+  Download,
   FileCode2,
   FileText,
   Play,
@@ -121,6 +122,8 @@ export default function DeployerConsole() {
   const [region, setRegion] = useState("eu-frankfurt-1");
   const [outputDir, setOutputDir] = useState("enterprise_ai_deployment/generated");
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [deployScriptPath, setDeployScriptPath] = useState<string | null>(null);
   const [runState, setRunState] = useState<"idle" | "running" | "succeeded" | "failed">(
     "idle",
   );
@@ -172,6 +175,8 @@ export default function DeployerConsole() {
     setYamlContent(SAMPLE_YAML);
     setEnvContent(SAMPLE_ENV);
     setRunEvents([]);
+    setCurrentRunId(null);
+    setDeployScriptPath(null);
     setRunState("idle");
     streamControllerRef.current?.abort();
     streamControllerRef.current = null;
@@ -196,6 +201,8 @@ export default function DeployerConsole() {
     streamControllerRef.current?.abort();
     eventCounterRef.current = 0;
     setRunEvents([]);
+    setCurrentRunId(null);
+    setDeployScriptPath(null);
     setRunState("running");
     pushRunEvent({
       kind: "status",
@@ -221,6 +228,7 @@ export default function DeployerConsole() {
       }
 
       const data = (await response.json()) as { run_id: string };
+      setCurrentRunId(data.run_id);
       const controller = new AbortController();
       streamControllerRef.current = controller;
       const streamResponse = await fetch(
@@ -304,6 +312,10 @@ export default function DeployerConsole() {
         level: RunEvent["level"];
         message: string;
       };
+      const scriptPrefix = "Generated executable deploy script:";
+      if (payload.message.startsWith(scriptPrefix)) {
+        setDeployScriptPath(payload.message.slice(scriptPrefix.length).trim());
+      }
       pushRunEvent({
         kind: "log",
         level: payload.level ?? "info",
@@ -324,6 +336,35 @@ export default function DeployerConsole() {
         message: payload.message,
       });
     }
+  }
+
+  async function downloadDeployScript() {
+    if (!currentRunId) {
+      return;
+    }
+    const response = await fetch(
+      `${API_BASE_URL}/api/runs/${currentRunId}/deploy-script`,
+      {
+        headers: apiHeaders(),
+      },
+    );
+    if (!response.ok) {
+      pushRunEvent({
+        kind: "error",
+        level: "error",
+        message: `Deploy script download failed with HTTP ${response.status}.`,
+      });
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "deploy.sh";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -511,6 +552,21 @@ export default function DeployerConsole() {
               <strong>{outputDir || "Not set"}</strong>
             </p>
             <span className={`runBadge ${runState}`}>{runState}</span>
+            {selectedAction === "dry-run" &&
+            deployScriptPath &&
+            runState === "succeeded" ? (
+              <button
+                className="scriptButton"
+                type="button"
+                onClick={downloadDeployScript}
+              >
+                <Download size={16} aria-hidden="true" />
+                deploy.sh
+              </button>
+            ) : null}
+            {selectedAction === "dry-run" && deployScriptPath ? (
+              <p className="artifactPath">{deployScriptPath}</p>
+            ) : null}
           </div>
           <div className="runLog">
             {runEvents.length === 0 ? (
