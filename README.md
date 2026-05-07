@@ -2,7 +2,7 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.9.0
-- **Last modified:** 2026-05-05
+- **Last modified:** 2026-05-07
 - **License:** MIT
 
 ![Black](https://img.shields.io/badge/code%20style-black-000000.svg)
@@ -398,6 +398,23 @@ conda run -n oci-enterprise-ai-deployer python -m pytest
   primary source files.
 - Keep real `.env.local` files, OCI config, auth tokens, private keys, private
   OCIDs, and generated artifacts out of git unless intentionally shared.
+
+### Concurrency
+
+The deployer currently assumes that two clients do not run concurrent actions
+against the same Hosted Application display name in the same OCI profile,
+region, and compartment.
+
+Hosted Application creation uses a list-then-create flow: the tool first looks
+for an active Hosted Application with the configured display name and reuses it
+when found; otherwise, it creates a new one. This sequence is not an atomic
+lock. If two Web UI sessions or CLI processes run at the same time with the
+same Hosted Application display name, both may attempt creation before either
+run observes the other resource.
+
+Avoid running overlapping deploys for the same Hosted Application until an
+application-level concurrency guard or OCI-supported idempotency mechanism is
+added.
 
 ## Development
 
