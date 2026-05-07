@@ -203,7 +203,7 @@ export default function DeployerConsole() {
     });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/actions/preview`, {
+      const response = await fetch(`${API_BASE_URL}/api/runs`, {
         method: "POST",
         headers: apiHeaders(),
         body: JSON.stringify({
@@ -268,7 +268,7 @@ export default function DeployerConsole() {
         message:
           error instanceof Error
             ? error.message
-            : "Unable to start the preview run.",
+            : "Unable to start the action run.",
       });
     }
   }

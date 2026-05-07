@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-05
+Last modified: 2026-05-07
 License: MIT
 
 Description:
@@ -45,7 +45,7 @@ OCI_WAIT_WARNING = (
 
 
 class RunRequest(BaseModel):
-    """Request sent by the web console to start a fake streamed run."""
+    """Request sent by the web console to start an action run."""
 
     yaml: str = Field(min_length=1)
     env: str = ""
@@ -63,7 +63,7 @@ class RunCreated(BaseModel):
 
 @dataclass(frozen=True)
 class StoredRun:
-    """In-memory run metadata used by the fake streaming backend."""
+    """In-memory run metadata used by the streaming backend."""
 
     run_id: str
     yaml: str
@@ -127,15 +127,26 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    def _create_action_run(request: RunRequest) -> RunCreated:
+        run_id = uuid.uuid4().hex
+        RUNS[run_id] = StoredRun(run_id=run_id, **request.model_dump())
+        return RunCreated(run_id=run_id)
+
+    @app.post(
+        "/api/runs",
+        response_model=RunCreated,
+        dependencies=[Depends(_verify_api_key)],
+    )
+    def create_action_run(request: RunRequest) -> RunCreated:
+        return _create_action_run(request)
+
     @app.post(
         "/api/actions/preview",
         response_model=RunCreated,
         dependencies=[Depends(_verify_api_key)],
     )
-    def create_preview_run(request: RunRequest) -> RunCreated:
-        run_id = uuid.uuid4().hex
-        RUNS[run_id] = StoredRun(run_id=run_id, **request.model_dump())
-        return RunCreated(run_id=run_id)
+    def create_legacy_preview_run(request: RunRequest) -> RunCreated:
+        return _create_action_run(request)
 
     @app.get("/api/runs/{run_id}", dependencies=[Depends(_verify_api_key)])
     def get_run(run_id: str) -> dict[str, object]:

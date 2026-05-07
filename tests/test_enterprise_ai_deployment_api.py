@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-05
+Last modified: 2026-05-07
 License: MIT
 
 Description:
@@ -31,7 +31,7 @@ def test_cors_origins_are_configurable(monkeypatch) -> None:
     client = TestClient(create_app())
 
     response = client.options(
-        "/api/actions/preview",
+        "/api/runs",
         headers={
             "Origin": "http://192.168.1.25:3000",
             "Access-Control-Request-Method": "POST",
@@ -48,7 +48,7 @@ def test_cors_origins_can_allow_all_clients(monkeypatch) -> None:
     client = TestClient(create_app())
 
     response = client.options(
-        "/api/actions/preview",
+        "/api/runs",
         headers={
             "Origin": "http://192.168.1.25:3000",
             "Access-Control-Request-Method": "POST",
@@ -66,7 +66,7 @@ def test_api_key_is_required_when_configured(monkeypatch) -> None:
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         json={
             "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
@@ -88,7 +88,7 @@ def test_api_key_rejects_wrong_value(monkeypatch) -> None:
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         headers={"X-API-Key": "wrong-key"},
         json={
             "yaml": _valid_web_yaml(),
@@ -104,14 +104,14 @@ def test_api_key_rejects_wrong_value(monkeypatch) -> None:
     assert response.json()["detail"] == "Invalid API key"
 
 
-def test_api_key_allows_preview_and_stream(monkeypatch) -> None:
+def test_api_key_allows_run_create_and_stream(monkeypatch) -> None:
     """Protected API endpoints accept requests with the configured key."""
     RUNS.clear()
     monkeypatch.setenv("DEPLOYER_WEB_API_KEY", "test-key")
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         headers={"X-API-Key": "test-key"},
         json={
             "yaml": "application:\n  name: demo\n",
@@ -135,14 +135,36 @@ def test_api_key_allows_preview_and_stream(monkeypatch) -> None:
     assert "event: done" in stream_response.text
 
 
-def test_create_preview_run_and_stream_validation_events(tmp_path, monkeypatch) -> None:
-    """Preview runs return a run id and stream real validation progress events."""
+def test_legacy_preview_endpoint_still_creates_run(tmp_path, monkeypatch) -> None:
+    """The old preview endpoint remains as a compatibility alias."""
     RUNS.clear()
     _set_docker_login(tmp_path, monkeypatch)
     client = TestClient(create_app())
 
     response = client.post(
         "/api/actions/preview",
+        json={
+            "yaml": _valid_web_yaml(),
+            "env": "LOG_LEVEL=INFO\n",
+            "action": "validate",
+            "profile": "DEFAULT",
+            "region": "eu-frankfurt-1",
+            "output_dir": "generated",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run_id"] in RUNS
+
+
+def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -> None:
+    """Action runs return a run id and stream real validation progress events."""
+    RUNS.clear()
+    _set_docker_login(tmp_path, monkeypatch)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/runs",
         json={
             "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
@@ -171,13 +193,13 @@ def test_create_preview_run_and_stream_validation_events(tmp_path, monkeypatch) 
     assert "CLI dry-run completed successfully." in body
 
 
-def test_preview_run_streams_validation_failure() -> None:
+def test_action_run_streams_validation_failure() -> None:
     """Invalid YAML/configuration streams a failed validation result."""
     RUNS.clear()
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         json={
             "yaml": "application:\n  name: demo\n",
             "env": "",
@@ -209,7 +231,7 @@ def test_validate_run_reports_missing_ocir_docker_login(tmp_path, monkeypatch) -
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         json={
             "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
@@ -287,7 +309,7 @@ def test_render_run_streams_real_cli_render(tmp_path, monkeypatch) -> None:
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         json={
             "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
@@ -331,7 +353,7 @@ def test_build_run_uses_real_cli_build_streamer(tmp_path, monkeypatch) -> None:
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         json={
             "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
@@ -376,7 +398,7 @@ def test_deploy_run_uses_real_cli_deploy_streamer(tmp_path, monkeypatch) -> None
     client = TestClient(create_app())
 
     response = client.post(
-        "/api/actions/preview",
+        "/api/runs",
         json={
             "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
