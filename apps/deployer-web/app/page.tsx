@@ -3,7 +3,7 @@
 /*
  * Author: L. Saetta
  * Version: 0.1.0
- * Last modified: 2026-05-05
+ * Last modified: 2026-05-07
  * License: MIT
  */
 
@@ -43,6 +43,14 @@ const ACTIONS: Record<ActionKey, string> = {
   render: "Render JSON artifacts",
   "dry-run": "Review dry run",
   build: "Build container image",
+  deploy: "Deploy",
+};
+
+const ACTION_BUTTON_LABELS: Record<ActionKey, string> = {
+  validate: "Validate",
+  render: "Render",
+  "dry-run": "Dry Run",
+  build: "Build",
   deploy: "Deploy",
 };
 
@@ -439,7 +447,7 @@ export default function DeployerConsole() {
               disabled={!canRun}
             >
               <Play size={17} aria-hidden="true" />
-              Run Preview
+              {ACTION_BUTTON_LABELS[selectedAction]}
             </button>
           </div>
         </header>
