@@ -1,7 +1,7 @@
 /*
  * Author: L. Saetta
  * Version: 0.1.0
- * Last modified: 2026-04-30
+ * Last modified: 2026-05-08
  * License: MIT
  */
 
@@ -263,6 +263,18 @@ button:disabled {
   pointer-events: none;
   transform: translateY(-50%);
   color: var(--muted);
+}
+
+.actionControl {
+  display: grid;
+  gap: 9px;
+}
+
+.sidebarActionButton {
+  width: 100%;
+  min-height: 42px;
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 14px 28px rgba(8, 35, 33, 0.24);
 }
 
 .checks {

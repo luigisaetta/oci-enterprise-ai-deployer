@@ -3,7 +3,7 @@
 /*
  * Author: L. Saetta
  * Version: 0.1.0
- * Last modified: 2026-05-07
+ * Last modified: 2026-05-08
  * License: MIT
  */
 
@@ -433,18 +433,29 @@ export default function DeployerConsole() {
           </label>
           <label className="field">
             <span>Action</span>
-            <div className="selectWrap">
-              <select
-                value={selectedAction}
-                onChange={(event) => setSelectedAction(event.target.value as ActionKey)}
+            <div className="actionControl">
+              <div className="selectWrap">
+                <select
+                  value={selectedAction}
+                  onChange={(event) => setSelectedAction(event.target.value as ActionKey)}
+                >
+                  {Object.entries(ACTIONS).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} aria-hidden="true" />
+              </div>
+              <button
+                className="primaryButton sidebarActionButton"
+                type="button"
+                onClick={runAction}
+                disabled={!canRun}
               >
-                {Object.entries(ACTIONS).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={16} aria-hidden="true" />
+                <Play size={17} aria-hidden="true" />
+                {ACTION_BUTTON_LABELS[selectedAction]}
+              </button>
             </div>
           </label>
         </section>
@@ -480,15 +491,6 @@ export default function DeployerConsole() {
             <button className="secondaryButton" type="button">
               <Save size={17} aria-hidden="true" />
               Save Draft
-            </button>
-            <button
-              className="primaryButton"
-              type="button"
-              onClick={runAction}
-              disabled={!canRun}
-            >
-              <Play size={17} aria-hidden="true" />
-              {ACTION_BUTTON_LABELS[selectedAction]}
             </button>
           </div>
         </header>
