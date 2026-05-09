@@ -2,12 +2,27 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.9.0
-- **Last modified:** 2026-05-05
+- **Last modified:** 2026-05-09
 - **License:** MIT
 
 This document tracks the functional story of the deployer as features are added
 over time. It is intentionally more narrative than a release changelog: the goal
 is to keep a clear memory of why each capability was introduced.
+
+## 2026-05-09 - Shared Preflight Checks
+
+Deployment readiness checks now live in a shared Python core used by both the
+CLI and Web UI.
+
+New capabilities:
+
+- Added a `preflight` CLI command before validation/render/deploy operations.
+- Added a Web UI action for running the same shared preflight checks.
+- Checked Docker CLI availability, Docker daemon access, Docker login to the
+  target OCIR registry, OCI CLI version, OCI read access, and the OCI Hosted
+  Application and Hosted Deployment command groups.
+- Kept `validate` focused on YAML schema and deployment rules so configuration
+  review can run even when the local deployment environment is not ready yet.
 
 ## 2026-05-07 - Dry-run Deploy Script Export
 

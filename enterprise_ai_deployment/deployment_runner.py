@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-07
+Last modified: 2026-05-09
 License: MIT
 
 Description:
@@ -52,8 +52,10 @@ from enterprise_ai_deployment.deployment_validation import (
 from enterprise_ai_deployment.ocir import (
     ImageReference,
     build_image_reference,
-    build_ocir_registry,
-    require_docker_login,
+)
+from enterprise_ai_deployment.preflight import (
+    format_preflight_report,
+    run_preflight_checks,
 )
 
 
@@ -100,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command_name in (
+        "preflight",
         "validate",
         "render",
         "build",
@@ -159,8 +162,9 @@ def run_command(args: argparse.Namespace) -> int:
         in {"render", "create-application", "create-deployment", "deploy"},
     )
 
-    if args.command == "validate":
-        _validate_local_prerequisites(context)
+    if args.command == "preflight":
+        _run_preflight_command(context, args)
+    elif args.command == "validate":
         print("Configuration is valid.")
     elif args.command == "render":
         _print_all_rendered(context)
@@ -183,6 +187,18 @@ def run_command(args: argparse.Namespace) -> int:
     else:
         print(f"Command {args.command!r} is not implemented in this first task.")
     return 0
+
+
+def _run_preflight_command(
+    context: DeploymentContext, args: argparse.Namespace
+) -> None:
+    """Run shared preflight checks and fail on blocking errors."""
+    report = run_preflight_checks(
+        context.config, _context_oci_cli_config(context, args)
+    )
+    print(format_preflight_report(report))
+    if not report.success:
+        raise RuntimeError("Preflight checks failed.")
 
 
 def _run_create_deployment_command(
@@ -648,12 +664,6 @@ def _context_oci_cli_config(
         profile=args.profile,
         region=context.config.application.region,
     )
-
-
-def _validate_local_prerequisites(context: DeploymentContext) -> None:
-    """Validate local prerequisites that can be checked without remote changes."""
-    registry = build_ocir_registry(context.config.application.region_key)
-    require_docker_login(registry)
 
 
 def _prepare_deployment_context(
