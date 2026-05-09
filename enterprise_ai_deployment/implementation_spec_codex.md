@@ -2,7 +2,7 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.1.0
-- **Last modified:** 2026-05-02
+- **Last modified:** 2026-05-09
 
 ## 1. Document Purpose
 
@@ -145,6 +145,7 @@ python oci_ai_deploy.py --config examples/agent_dev.yaml validate
 Required commands:
 
 ```bash
+python oci_ai_deploy.py --config examples/agent_dev.yaml preflight
 python oci_ai_deploy.py --config examples/agent_dev.yaml validate
 python oci_ai_deploy.py --config examples/agent_dev.yaml render
 python oci_ai_deploy.py --config examples/agent_dev.yaml build
@@ -159,6 +160,13 @@ When the YAML file uses the Enterprise Solution shape, `render`, `build`,
 `push`, `create-application`, and `deploy` apply to all deployment items in the
 declared order. `deploy` must stop immediately on the first deployment failure
 and report the failed deployment name and phase.
+
+`preflight` checks deployment readiness for the local machine and OCI account
+without creating, updating, pushing, or deploying resources. It verifies Docker,
+Docker daemon access, Docker login to the target OCIR registry, OCI CLI version,
+OCI read access, and the Hosted Application and Hosted Deployment command
+groups. `validate` remains focused on YAML schema and deployment rules and must
+not require Docker login.
 
 Required global parameters:
 
@@ -180,7 +188,7 @@ Expected behavior of `--dry-run`:
 - may call read-only OCI lookup commands, such as `oci os ns get`, when required
   to make generated artifacts or exported scripts directly executable
 - assumes Docker login to the target OCIR registry has already been completed;
-  `validate` checks the local Docker configuration and reports a missing login
+  `preflight` checks the local Docker configuration and reports a missing login
 - prints the commands that would be executed
 - generates intermediate JSON files in the output directory, if requested
 - when `--script-file` is provided with `deploy`, writes an executable `.sh`
@@ -559,6 +567,7 @@ Update README.
 Acceptance criteria:
 
 - README explains prerequisites
+- README explains preflight
 - README explains Python dependency installation
 - README explains validation
 - README explains dry run
@@ -588,6 +597,7 @@ Minimum commands:
 ```bash
 python -m pytest tests
 python oci_ai_deploy.py --help
+python oci_ai_deploy.py --config examples/agent_dev.yaml preflight
 python oci_ai_deploy.py --config examples/agent_dev.yaml validate
 python oci_ai_deploy.py --config examples/agent_dev.yaml render
 python oci_ai_deploy.py --config examples/agent_dev.yaml deploy --dry-run

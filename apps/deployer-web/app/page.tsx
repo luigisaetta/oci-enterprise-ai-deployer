@@ -3,7 +3,7 @@
 /*
  * Author: L. Saetta
  * Version: 0.1.0
- * Last modified: 2026-05-08
+ * Last modified: 2026-05-09
  * License: MIT
  */
 
@@ -30,7 +30,7 @@ type UploadedFile = {
   content: string;
 };
 
-type ActionKey = "validate" | "render" | "dry-run" | "build" | "deploy";
+type ActionKey = "preflight" | "validate" | "render" | "dry-run" | "build" | "deploy";
 
 type RunEvent = {
   id: number;
@@ -40,6 +40,7 @@ type RunEvent = {
 };
 
 const ACTIONS: Record<ActionKey, string> = {
+  preflight: "Preflight environment",
   validate: "Validate configuration",
   render: "Render JSON artifacts",
   "dry-run": "Review dry run",
@@ -48,6 +49,7 @@ const ACTIONS: Record<ActionKey, string> = {
 };
 
 const ACTION_BUTTON_LABELS: Record<ActionKey, string> = {
+  preflight: "Preflight",
   validate: "Validate",
   render: "Render",
   "dry-run": "Dry Run",

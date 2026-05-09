@@ -2,7 +2,7 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.9.0
-- **Last modified:** 2026-05-07
+- **Last modified:** 2026-05-09
 - **License:** MIT
 
 ![Black](https://img.shields.io/badge/code%20style-black-000000.svg)
@@ -196,6 +196,13 @@ Common commands:
 python oci_ai_deploy.py \
   --config enterprise_ai_deployment/examples/enterprise_solution_dev.yaml \
   --env-file enterprise_ai_deployment/examples/agent_dev.env.local \
+  preflight
+```
+
+```bash
+python oci_ai_deploy.py \
+  --config enterprise_ai_deployment/examples/enterprise_solution_dev.yaml \
+  --env-file enterprise_ai_deployment/examples/agent_dev.env.local \
   validate
 ```
 
@@ -250,6 +257,7 @@ python oci_ai_deploy.py \
 A real `deploy` runs:
 
 ```text
+preflight recommended before deploy
 resolve OCIR namespace
 render OCI CLI JSON artifacts
 docker build
@@ -334,9 +342,9 @@ Log in to OCIR before real pushes:
 docker login fra.ocir.io
 ```
 
-The CLI `validate` command checks the local Docker configuration for a login
+The CLI `preflight` command checks the local Docker configuration for a login
 entry matching the configured OCIR registry, for example `fra.ocir.io` when
-`region_key: fra` is used. If the login is missing, validation fails before
+`region_key: fra` is used. If the login is missing, preflight fails before
 build, push, or deployment work starts.
 
 ## Quickstart
@@ -404,6 +412,10 @@ conda run -n oci-enterprise-ai-deployer python -m pytest
 
 ## Safety Notes
 
+- `preflight` checks local and OCI deployment readiness without creating,
+  updating, pushing, or deploying resources.
+- `validate` checks YAML schema and deployment rules; it does not require Docker
+  login.
 - `--dry-run` prints commands and renders artifacts without calling Docker push
   or OCI create operations.
 - A real `deploy` builds and pushes images, then creates OCI resources.

@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-07
+Last modified: 2026-05-09
 License: MIT
 
 Description:
@@ -36,9 +36,13 @@ from enterprise_ai_deployment.deployment_validation import (
     DeploymentValidationError,
     validate_deployment_config,
 )
-from enterprise_ai_deployment.ocir import build_ocir_registry, require_docker_login
+from enterprise_ai_deployment.ocir import build_ocir_registry
+from enterprise_ai_deployment.preflight import (
+    format_preflight_report,
+    run_preflight_checks,
+)
 
-RunAction = Literal["validate", "render", "dry-run", "build", "deploy"]
+RunAction = Literal["preflight", "validate", "render", "dry-run", "build", "deploy"]
 OCI_WAIT_WARNING = (
     "Encountered error while waiting for work request to enter the specified state"
 )
@@ -266,12 +270,17 @@ async def _fake_run_event_stream(run: StoredRun):
             {
                 "level": "success",
                 "message": (
-                    "Docker login detected for target OCIR registry "
+                    "Target OCIR registry resolved as "
                     f"{validation_result.ocir_registry}."
                 ),
             },
         )
         await asyncio.sleep(0.45)
+
+    if run.action == "preflight":
+        async for event in _stream_preflight_checks(run):
+            yield event
+        return
 
     if run.action == "dry-run":
         async for event in _stream_cli_command(
@@ -379,10 +388,68 @@ def _validate_uploaded_inputs(run: StoredRun) -> ValidationResult:
             )
             validate_deployment_config(config)
             ocir_registry = build_ocir_registry(config.application.region_key)
-            require_docker_login(ocir_registry)
     except (DeploymentConfigError, DeploymentValidationError, RuntimeError) as exc:
         return ValidationResult(error=str(exc))
     return ValidationResult(ocir_registry=ocir_registry)
+
+
+async def _stream_preflight_checks(run: StoredRun):
+    """Run shared preflight checks and stream the structured report."""
+    yield _to_sse("status", {"state": "running", "step": "preflight"})
+    yield _to_sse(
+        "log",
+        {
+            "level": "info",
+            "message": "Starting shared core preflight checks.",
+        },
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="deployer-web-") as temp_dir:
+            temp_path = Path(temp_dir)
+            yaml_path = temp_path / "deployment.yaml"
+            env_path = temp_path / "deployment.env"
+            yaml_path.write_text(run.yaml, encoding="utf-8")
+            env_path.write_text(run.env, encoding="utf-8")
+
+            config = load_deployment_config(yaml_path, env_file=env_path)
+            config = replace(config, source_path=Path.cwd() / "deployment.yaml")
+            cli_config = OciCliConfig(profile=run.profile, region=run.region)
+            config = resolve_deployment_config_compartment(config, cli_config)
+            validate_deployment_config(config)
+            report = run_preflight_checks(config, cli_config)
+    except (DeploymentConfigError, DeploymentValidationError, RuntimeError) as exc:
+        yield _to_sse(
+            "done",
+            {
+                "state": "failed",
+                "step": "preflight",
+                "message": f"Preflight failed before checks could run: {exc}",
+            },
+        )
+        return
+
+    for line in format_preflight_report(report).splitlines():
+        yield _to_sse(
+            "log",
+            {
+                "level": _preflight_log_level(line),
+                "message": line,
+            },
+        )
+        await asyncio.sleep(0.05)
+
+    yield _to_sse(
+        "done",
+        {
+            "state": "succeeded" if report.success else "failed",
+            "step": "complete" if report.success else "preflight",
+            "message": (
+                "Preflight completed successfully."
+                if report.success
+                else "Preflight failed. Fix the ERROR checks before deploy."
+            ),
+        },
+    )
 
 
 async def _stream_cli_command(
@@ -521,6 +588,17 @@ def _cli_log_level(message: str) -> str:
     """Return the UI log severity for one CLI output line."""
     if OCI_WAIT_WARNING in message:
         return "warning"
+    return "info"
+
+
+def _preflight_log_level(message: str) -> str:
+    """Return UI log severity for one preflight report line."""
+    if "[ERROR]" in message:
+        return "error"
+    if "[WARN]" in message:
+        return "warning"
+    if "[OK]" in message or "completed successfully" in message:
+        return "success"
     return "info"
 
 

@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-07
+Last modified: 2026-05-09
 License: MIT
 
 Description:
@@ -32,6 +32,7 @@ from enterprise_ai_deployment.ocir import (
     build_image_reference,
     docker_login_exists,
 )
+from enterprise_ai_deployment.preflight import PreflightCheck, PreflightReport
 
 
 def test_load_deployment_config_reads_yaml_and_env_file(tmp_path, monkeypatch) -> None:
@@ -239,6 +240,42 @@ def test_render_dry_run_resolves_compartment_name_before_rendering(
     assert "Generated OCI CLI JSON artifacts:" in captured.out
 
 
+def test_preflight_command_uses_shared_core(tmp_path, monkeypatch, capsys) -> None:
+    """CLI preflight delegates environment checks to the shared core."""
+    monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    config_path = tmp_path / "deploy.yaml"
+    config_path.write_text(_valid_yaml(tmp_path), encoding="utf-8")
+    seen = {}
+
+    def fake_preflight(config, cli_config):
+        seen["application"] = config.application.name
+        seen["profile"] = cli_config.profile
+        return PreflightReport(checks=(PreflightCheck("Docker CLI", "ok", "found"),))
+
+    monkeypatch.setattr(
+        "enterprise_ai_deployment.deployment_runner.run_preflight_checks",
+        fake_preflight,
+    )
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "--profile",
+            "PROD",
+            "preflight",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert seen == {"application": "demo-agent", "profile": "PROD"}
+    assert "Preflight checks:" in captured.out
+    assert "[OK] Docker CLI" in captured.out
+
+
 def test_render_artifacts_do_not_write_local_secret_values(
     tmp_path, monkeypatch
 ) -> None:
@@ -387,8 +424,10 @@ def test_docker_login_exists_reads_docker_auth_config(tmp_path) -> None:
     assert not docker_login_exists("iad.ocir.io", docker_config)
 
 
-def test_validate_requires_ocir_docker_login(tmp_path, monkeypatch, capsys) -> None:
-    """CLI validate reports a missing Docker login for the target OCIR registry."""
+def test_validate_does_not_require_ocir_docker_login(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """CLI validate focuses on configuration rules, not environment readiness."""
     monkeypatch.setenv("MY_AGENT_API_KEY", "local-secret-value")
     docker_config = tmp_path / "docker"
     docker_config.mkdir()
@@ -407,11 +446,8 @@ def test_validate_requires_ocir_docker_login(tmp_path, monkeypatch, capsys) -> N
 
     captured = capsys.readouterr()
 
-    assert exit_code == 1
-    assert "Docker is not logged in to the target OCIR registry 'fra.ocir.io'" in (
-        captured.out
-    )
-    assert "docker login fra.ocir.io" in captured.out
+    assert exit_code == 0
+    assert "Configuration is valid." in captured.out
 
 
 def test_validate_accepts_ocir_docker_login(tmp_path, monkeypatch, capsys) -> None:
@@ -1486,6 +1522,7 @@ def test_cli_help_lists_required_commands(capsys) -> None:
 
     captured = capsys.readouterr()
 
+    assert "preflight" in captured.out
     assert "create-application" in captured.out
     assert "create-deployment" in captured.out
     assert "--env-file" in captured.out

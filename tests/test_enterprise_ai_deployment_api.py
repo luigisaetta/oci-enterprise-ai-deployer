@@ -1,7 +1,7 @@
 """
 Author: L. Saetta
 Version: 0.1.0
-Last modified: 2026-05-07
+Last modified: 2026-05-09
 License: MIT
 
 Description:
@@ -189,7 +189,7 @@ def test_create_action_run_and_stream_validation_events(tmp_path, monkeypatch) -
     assert "event: log" in body
     assert "event: done" in body
     assert "passed real backend validation." in body
-    assert "Docker login detected for target OCIR registry fra.ocir.io." in body
+    assert "Target OCIR registry resolved as fra.ocir.io." in body
     assert "Deployment plan:" in body
     assert "Generated executable deploy script:" in body
     assert "deploy.sh" in body
@@ -241,12 +241,22 @@ def test_action_run_streams_validation_failure() -> None:
     assert "container: Field required" in body
 
 
-def test_validate_run_reports_missing_ocir_docker_login(tmp_path, monkeypatch) -> None:
-    """Validate action reports when Docker is not logged in to target OCIR."""
+def test_preflight_run_reports_missing_ocir_docker_login(tmp_path, monkeypatch) -> None:
+    """Preflight action reports when Docker is not logged in to target OCIR."""
     RUNS.clear()
     docker_config = tmp_path / "docker"
     docker_config.mkdir()
     monkeypatch.setenv("DOCKER_CONFIG", str(docker_config))
+    monkeypatch.setattr(
+        "enterprise_ai_deployment.preflight.shutil.which",
+        lambda name: f"/usr/bin/{name}",
+    )
+    monkeypatch.setattr(
+        "enterprise_ai_deployment.preflight.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0, stdout="3.81.0\n", stderr=""
+        ),
+    )
     client = TestClient(create_app())
 
     response = client.post(
@@ -254,7 +264,7 @@ def test_validate_run_reports_missing_ocir_docker_login(tmp_path, monkeypatch) -
         json={
             "yaml": _valid_web_yaml(),
             "env": "LOG_LEVEL=INFO\n",
-            "action": "validate",
+            "action": "preflight",
             "profile": "DEFAULT",
             "region": "eu-frankfurt-1",
             "output_dir": "generated",
@@ -269,7 +279,7 @@ def test_validate_run_reports_missing_ocir_docker_login(tmp_path, monkeypatch) -
 
     assert "event: done" in body
     assert '"state": "failed"' in body
-    assert "Docker is not logged in to the target OCIR registry 'fra.ocir.io'" in body
+    assert "[ERROR] Docker OCIR login" in body
     assert "docker login fra.ocir.io" in body
 
 
