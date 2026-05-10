@@ -2,7 +2,7 @@
 
 Author: L. Saetta  
 Version: 0.1.0  
-Last modified: 2026-05-05  
+Last modified: 2026-05-10  
 License: MIT
 
 ## Objective
@@ -23,6 +23,78 @@ The examples below assume:
 - the Linux host IP address is `192.168.1.25`
 
 Replace `192.168.1.25` with the actual IP address or DNS name of your machine.
+
+## Docker Compose Deployment
+
+The repository also provides a Docker Compose deployment for the Web UI and
+backend API. This is the quickest way to run both services on a Linux host that
+already has Docker, OCI CLI configuration files, and OCIR login credentials.
+
+Before starting, verify that Docker can access the target OCIR registry from
+the host:
+
+```bash
+docker login fra.ocir.io
+```
+
+Copy the example Compose environment file and adjust it for the target host:
+
+```bash
+cp compose.env.example .env
+```
+
+For a remote Linux host, set these values in `.env`:
+
+```env
+DEPLOYER_API_PORT=8100
+DEPLOYER_WEB_PORT=3000
+DEPLOYER_WEB_API_KEY=replace-with-a-long-random-value
+NEXT_PUBLIC_DEPLOYER_API_KEY=replace-with-a-long-random-value
+NEXT_PUBLIC_DEPLOYER_API_URL=http://192.168.1.25:8100
+DEPLOYER_WEB_CORS_ORIGINS=http://192.168.1.25:3000
+HOST_HOME_DIR=/home/opc
+OCI_CONFIG_DIR=/home/opc/.oci
+DOCKER_CONFIG_DIR=/home/opc/.docker
+DOCKER_SOCKET=/var/run/docker.sock
+OCI_CLI_PROFILE=DEFAULT
+```
+
+`NEXT_PUBLIC_DEPLOYER_API_URL` and `NEXT_PUBLIC_DEPLOYER_API_KEY` are compiled
+into the Next.js browser bundle. Rebuild the frontend image whenever either
+value changes:
+
+```bash
+docker compose build deployer-web
+```
+
+Start the full stack:
+
+```bash
+docker compose up --build
+```
+
+Open the Web UI from a browser:
+
+```text
+http://192.168.1.25:3000
+```
+
+The API container mounts the following host resources:
+
+- the repository at `/workspace`, so relative YAML paths and generated outputs
+  stay available on the host
+- `${HOST_HOME_DIR}` read-only at the same container path, so OCI key files or
+  absolute build-context paths under the host home continue to resolve
+- `${OCI_CONFIG_DIR}` read-only at `/root/.oci`, so the OCI CLI can use the
+  configured profiles
+- `${DOCKER_CONFIG_DIR}` read-only at `/root/.docker`, so Docker can reuse OCIR
+  login credentials
+- `${DOCKER_SOCKET}` at `/var/run/docker.sock`, so Docker build and push
+  commands use the host Docker daemon
+
+If Docker credentials on the host rely on a desktop-only credential helper,
+create plain OCIR credentials for this deployment host or run `docker login`
+from an environment whose resulting Docker config is usable by the container.
 
 ## Prepare The System
 

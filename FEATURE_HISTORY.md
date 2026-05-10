@@ -2,12 +2,29 @@
 
 - **Author:** L. Saetta
 - **Version:** 0.9.0
-- **Last modified:** 2026-05-09
+- **Last modified:** 2026-05-10
 - **License:** MIT
 
 This document tracks the functional story of the deployer as features are added
 over time. It is intentionally more narrative than a release changelog: the goal
 is to keep a clear memory of why each capability was introduced.
+
+## 2026-05-10 - Docker Compose Web Deployment
+
+The Web UI can now be started as a complete Docker Compose stack instead of two
+manual local processes.
+
+New capabilities:
+
+- Added a Compose deployment with FastAPI backend and Next.js frontend services.
+- Added backend and frontend container builds for the deployer Web UI.
+- Mounted the repository, host home, OCI CLI config, Docker config, and Docker
+  socket into the API container so validation, render, build, push, and deploy
+  actions can use the host's existing OCI and Docker setup.
+- Added a Compose environment template for ports, API key protection, CORS,
+  OCI profile defaults, and mount paths.
+- Documented the Compose workflow and the rebuild requirement for
+  browser-visible `NEXT_PUBLIC_` frontend settings.
 
 ## 2026-05-09 - Shared Preflight Checks
 
