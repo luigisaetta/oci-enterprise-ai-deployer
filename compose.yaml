@@ -1,0 +1,50 @@
+# Author: L. Saetta
+# Version: 0.9.0
+# Last modified: 2026-05-10
+# License: MIT
+
+services:
+  deployer-api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: oci-enterprise-ai-deployer-api:0.9.0
+    container_name: oci-enterprise-ai-deployer-api
+    environment:
+      DEPLOYER_WEB_API_KEY: ${DEPLOYER_WEB_API_KEY:-}
+      DEPLOYER_WEB_CORS_ORIGINS: ${DEPLOYER_WEB_CORS_ORIGINS:-http://localhost:3000}
+      OCI_CLI_AUTH: ${OCI_CLI_AUTH:-api_key}
+      OCI_CLI_PROFILE: ${OCI_CLI_PROFILE:-DEFAULT}
+    ports:
+      - "${DEPLOYER_API_PORT:-8100}:8100"
+    volumes:
+      - .:/workspace
+      - ${HOST_HOME_DIR:-${HOME}}:${HOST_HOME_DIR:-${HOME}}:ro
+      - ${OCI_CONFIG_DIR:-${HOME}/.oci}:/root/.oci:ro
+      - ${DOCKER_CONFIG_DIR:-${HOME}/.docker}:/root/.docker:ro
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  deployer-web:
+    build:
+      context: apps/deployer-web
+      dockerfile: ../../docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_DEPLOYER_API_URL: ${NEXT_PUBLIC_DEPLOYER_API_URL:-http://localhost:8100}
+        NEXT_PUBLIC_DEPLOYER_API_KEY: ${NEXT_PUBLIC_DEPLOYER_API_KEY:-}
+    image: oci-enterprise-ai-deployer-web:0.9.0
+    container_name: oci-enterprise-ai-deployer-web
+    depends_on:
+      deployer-api:
+        condition: service_healthy
+    ports:
+      - "${DEPLOYER_WEB_PORT:-3000}:3000"

@@ -1,0 +1,10 @@
+# Author: L. Saetta
+# Version: 0.1.0
+# Last modified: 2026-05-10
+# License: MIT
+
+.next
+node_modules
+npm-debug.log
+.DS_Store
+.env

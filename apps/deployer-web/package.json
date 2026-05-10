@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "rm -rf .next && next dev",
     "build": "rm -rf .next && next build",
+    "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {

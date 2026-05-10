@@ -1,0 +1,20 @@
+# Author: L. Saetta
+# Version: 0.9.0
+# Last modified: 2026-05-10
+# License: MIT
+
+.git
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+*.py[cod]
+.DS_Store
+.env
+.venv
+venv
+node_modules
+apps/deployer-web/.next
+apps/deployer-web/node_modules
+enterprise_ai_deployment/generated
+oci_agents_workshop.egg-info
